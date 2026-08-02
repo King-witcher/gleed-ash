@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Cargo Build (Debug)",
+      "detail": "cargo build",
+      "icon": {
+        "color": "terminal.ansiGreen",
+        "id": "tools"
+      },
+      // Delega pro build.ps1 do diretório pai (ignore.rust/), que carrega o
+      // ambiente do MSVC antes do cargo — a crate sdl3 compila a SDL3 em C via
+      // build-from-source, e o build script dela precisa achar cl.exe.
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/../build.ps1", "ash-engine", "build"],
+      "problemMatcher": ["$rustc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+
+    {
+      "label": "Cargo Build (Release)",
+      "detail": "cargo build --release",
+      "icon": {
+        "color": "terminal.ansiBlue",
+        "id": "tools"
+      },
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/../build.ps1", "ash-engine", "build", "--release"],
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    }
+  ]
+}

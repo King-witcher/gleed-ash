@@ -1,0 +1,24 @@
+[package]
+name = "ash-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Bindings Vulkan "cruas": 1:1 com a API C, sem RAII e sem validação.
+# É o equivalente Rust do vulkan_raii.hpp — só que sem o RAII.
+ash = "0.38"
+
+# SDL3 (janela + input + surface Vulkan), igual ao engine C++.
+# `ash`: faz o SDL devolver os handles já tipados como ash::vk::*.
+# `build-from-source`: compila a SDL3 junto, como o FetchContent do CMake.
+sdl3 = { version = "0.18", features = ["ash", "build-from-source"] }
+
+# Substitui o GLM. `perspective_rh` já usa profundidade 0..1 (o que no C++
+# exigia GLM_FORCE_DEPTH_ZERO_TO_ONE).
+glam = "0.33"
+
+# Substitui a VMA (que é C++). Mesmo papel: sub-aloca blocos grandes de
+# VkDeviceMemory e escolhe o memory type a partir de um "uso" declarado.
+gpu-allocator = { version = "0.28", features = ["vulkan"] }
+
+vk_raii = { path = "../vk_raii"}
