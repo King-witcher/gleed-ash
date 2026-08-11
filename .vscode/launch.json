@@ -2,23 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run (Debug)",
-      // "lldb" = extensão CodeLLDB. Lê o PDB gerado pelo msvc target do rustc.
+      "name": "Debug",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/target/debug/ash-engine.exe",
-      "cwd": "${workspaceFolder}",
-      "terminal": "external",
-      "preLaunchTask": "Cargo Build (Debug)"
+      "cargo": {
+        "args": ["run"],
+        "cwd": "${workspaceFolder}",
+      }
     },
     {
-      "name": "Run (Release)",
+      "name": "Debug",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/target/release/ash-engine.exe",
-      "cwd": "${workspaceFolder}",
-      "terminal": "external",
-      "preLaunchTask": "Cargo Build (Release)"
-    }
+      "cargo": {
+        "args": ["run", "--release"],
+        "cwd": "${workspaceFolder}",
+      }
+    },
   ]
 }

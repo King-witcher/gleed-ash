@@ -1,38 +1,32 @@
 {
   "version": "2.0.0",
+  "options": {
+    "cwd": "${workspaceFolder}"
+  },
+  "presentation": {
+    "panel": "dedicated",
+    "clear": true
+  },
   "tasks": [
     {
-      "label": "Cargo Build (Debug)",
-      "detail": "cargo build",
-      "icon": {
-        "color": "terminal.ansiGreen",
-        "id": "tools"
-      },
-      // Delega pro build.ps1 do diretório pai (ignore.rust/), que carrega o
-      // ambiente do MSVC antes do cargo — a crate sdl3 compila a SDL3 em C via
-      // build-from-source, e o build script dela precisa achar cl.exe.
+      "label": "cargo test",
+      "detail": "Run the workspace tests",
+      "icon": { "id": "beaker", "color": "terminal.ansiMagenta" },
       "type": "process",
-      "command": "pwsh",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/../build.ps1", "ash-engine", "build"],
+      "command": "cargo",
+      "args": ["test", "--workspace"],
       "problemMatcher": ["$rustc"],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
+      "group": { "kind": "test", "isDefault": true }
     },
-
     {
-      "label": "Cargo Build (Release)",
-      "detail": "cargo build --release",
-      "icon": {
-        "color": "terminal.ansiBlue",
-        "id": "tools"
-      },
+      "label": "cargo build",
+      "detail": "Run the workspace tests",
+      "icon": { "id": "build", "color": "terminal.ansiWhite" },
       "type": "process",
-      "command": "pwsh",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/../build.ps1", "ash-engine", "build", "--release"],
+      "command": "cargo",
+      "args": ["build", "--workspace"],
       "problemMatcher": ["$rustc"],
-      "group": "build"
-    }
+      "group": { "kind": "build", "isDefault": true }
+    },
   ]
 }
