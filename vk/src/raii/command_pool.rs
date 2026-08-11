@@ -5,7 +5,7 @@ use std::rc::Rc;
 use ash::prelude::VkResult;
 use ash::vk;
 
-use crate::{CommandBuffer, Device};
+use super::{CommandBuffer, Device};
 
 /// Cheap handle to a `VkCommandPool`: cloning bumps a refcount, and the pool is
 /// destroyed once the last clone — including the ones held by every

@@ -5,7 +5,7 @@ use ash::khr;
 use ash::prelude::VkResult;
 use ash::vk;
 
-use crate::{Device, Queue};
+use super::{Device, Queue};
 
 /// Owns a `VkSwapchainKHR` and the `VK_KHR_swapchain` loader that destroys it.
 ///

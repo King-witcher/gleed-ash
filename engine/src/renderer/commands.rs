@@ -1,18 +1,16 @@
 //! Comandos de render pass compartilhados entre o início do frame
 //! ([`super::Renderer::begin_frame`]) e o seu fim ([`super::Frame::submit`]).
 //!
-//! Todas as funções são `unsafe` pelo mesmo motivo: o `vk_raii` não checa a
+//! Todas as funções são `unsafe` pelo mesmo motivo: o `vk::raii` não checa a
 //! máquina de estados do command buffer, então quem chama é que garante que ele
 //! está gravando e que a imagem passada continua viva.
-
-use ash::vk;
 
 use crate::swapchain::SwapchainImage;
 
 /// # Safety
 /// Ver a nota do módulo.
 pub(super) unsafe fn begin_rendering(
-    command_buffer: &mut vk_raii::CommandBuffer,
+    command_buffer: &mut vk::raii::CommandBuffer,
     image: &SwapchainImage,
     extent: vk::Extent2D,
 ) {
@@ -66,7 +64,7 @@ pub(super) unsafe fn begin_rendering(
 /// # Safety
 /// Ver a nota do módulo.
 pub(super) unsafe fn transition_rendering(
-    command_buffer: &mut vk_raii::CommandBuffer,
+    command_buffer: &mut vk::raii::CommandBuffer,
     image: vk::Image,
 ) {
     let barriers = [vk::ImageMemoryBarrier2::default()
@@ -96,7 +94,7 @@ pub(super) unsafe fn transition_rendering(
 /// # Safety
 /// Ver a nota do módulo.
 pub(super) unsafe fn transition_presentation(
-    command_buffer: &mut vk_raii::CommandBuffer,
+    command_buffer: &mut vk::raii::CommandBuffer,
     image: vk::Image,
 ) {
     let barriers = [vk::ImageMemoryBarrier2::default()

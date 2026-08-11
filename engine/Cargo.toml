@@ -4,12 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Bindings Vulkan "cruas": 1:1 com a API C, sem RAII e sem validação.
-# É o equivalente Rust do vulkan_raii.hpp — só que sem o RAII.
-ash = "0.38"
+# Vulkan: os tipos da `ash` que usamos (reexportados) mais a camada RAII em
+# `vk::raii`. O engine não fala com a `ash` diretamente — passa tudo por aqui.
+vk = { path = "../vk" }
 
 # SDL3 (janela + input + surface Vulkan), igual ao engine C++.
-# `ash`: faz o SDL devolver os handles já tipados como ash::vk::*.
+# `ash`: faz o SDL devolver os handles já tipados. Esta feature e a `vulkan` da
+# gpu-allocator abaixo puxam a mesma `ash` que a crate `vk` — é o Cargo unificando
+# as três que faz os tipos baterem sem cast. Bumpar uma sem as outras quebra isso.
 # `build-from-source`: compila a SDL3 junto, como o FetchContent do CMake.
 sdl3 = { version = "0.18", features = ["ash", "build-from-source"] }
 
@@ -20,5 +22,3 @@ glam = "0.33"
 # Substitui a VMA (que é C++). Mesmo papel: sub-aloca blocos grandes de
 # VkDeviceMemory e escolhe o memory type a partir de um "uso" declarado.
 gpu-allocator = { version = "0.28", features = ["vulkan"] }
-
-vk_raii = { path = "../vk_raii"}

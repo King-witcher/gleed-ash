@@ -6,7 +6,7 @@ use ash::khr;
 use ash::prelude::VkResult;
 use ash::vk;
 
-use crate::{CommandPool, Instance, PhysicalDevice, Pipeline, Queue, Swapchain};
+use super::{CommandPool, Instance, PhysicalDevice, Pipeline, Queue, Swapchain};
 
 /// Cheap handle to a `VkDevice`: cloning bumps a refcount, and the device is
 /// destroyed once the last clone — including the ones held by every object it

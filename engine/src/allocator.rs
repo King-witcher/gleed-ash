@@ -12,7 +12,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use ash::vk;
 use gpu_allocator::vulkan::{
     Allocation, AllocationCreateDesc, AllocationScheme, Allocator as GpuAllocator,
     AllocatorCreateDesc,

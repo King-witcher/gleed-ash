@@ -5,7 +5,7 @@ use std::rc::Rc;
 use ash::prelude::VkResult;
 use ash::vk;
 
-use crate::PhysicalDevice;
+use super::PhysicalDevice;
 
 /// Cheap handle to a `VkInstance`: cloning bumps a refcount, and the instance is
 /// destroyed once the last clone — including the ones held by `PhysicalDevice`

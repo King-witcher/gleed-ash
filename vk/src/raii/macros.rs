@@ -2,13 +2,13 @@
 ///
 /// Generates the struct, `Deref` to the raw handle, `Debug`, and a `Drop` that
 /// calls `$destroy`. The optional fourth argument also adds the matching
-/// constructor to [`Device`](crate::Device), shadowing the `ash` method of the
+/// constructor to [`Device`](crate::raii::Device), shadowing the `ash` method of the
 /// same name so it returns the wrapper instead of the bare handle.
 macro_rules! device_object {
     ($name:ident, $handle:ty, $destroy:ident) => {
         pub struct $name {
             raw: $handle,
-            device: $crate::Device,
+            device: $crate::raii::Device,
         }
 
         impl $name {
@@ -16,7 +16,7 @@ macro_rules! device_object {
             /// - `raw` must have been created from `device`;
             /// - this takes ownership of `raw`: nothing else may destroy it.
             #[inline]
-            pub unsafe fn from_raw(device: $crate::Device, raw: $handle) -> Self {
+            pub unsafe fn from_raw(device: $crate::raii::Device, raw: $handle) -> Self {
                 Self { raw, device }
             }
 
@@ -26,7 +26,7 @@ macro_rules! device_object {
             }
 
             #[inline]
-            pub fn device(&self) -> &$crate::Device {
+            pub fn device(&self) -> &$crate::raii::Device {
                 &self.device
             }
         }
@@ -56,7 +56,7 @@ macro_rules! device_object {
     ($name:ident, $handle:ty, $destroy:ident, $create:ident($info:ty)) => {
         device_object!($name, $handle, $destroy);
 
-        impl $crate::Device {
+        impl $crate::raii::Device {
             /// # Safety
             /// Same contract as the `ash` call it forwards to.
             #[inline]

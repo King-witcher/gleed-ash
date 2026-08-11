@@ -1,7 +1,5 @@
 //! Equivalente a modules/engine/src/mesh.{h,cc}.
 
-use ash::vk;
-
 use crate::allocator::Buffer;
 use crate::prelude::*;
 use crate::transfer::TransferContext;

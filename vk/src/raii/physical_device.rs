@@ -3,7 +3,7 @@ use std::ops::Deref;
 use ash::prelude::VkResult;
 use ash::vk;
 
-use crate::{Device, Instance, Surface};
+use super::{Device, Instance, Surface};
 
 /// A `VkPhysicalDevice` plus the instance that enumerated it.
 ///

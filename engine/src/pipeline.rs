@@ -2,8 +2,6 @@
 
 use std::io::Cursor;
 
-use ash::vk;
-
 use crate::device::Device;
 use crate::prelude::*;
 use crate::vertex::Vertex;
@@ -20,9 +18,9 @@ pub struct Pipeline {
     // layouts que a descrevem. Cada um deles segura o device por refcount, então
     // não há mais `impl Drop` aqui — nem o vazamento que existia quando a
     // criação da pipeline falhava depois dos layouts.
-    pipeline: vk_raii::Pipeline,
-    layout: vk_raii::PipelineLayout,
-    descriptor_set_layout: vk_raii::DescriptorSetLayout,
+    pipeline: vk::raii::Pipeline,
+    layout: vk::raii::PipelineLayout,
+    descriptor_set_layout: vk::raii::DescriptorSetLayout,
 }
 
 impl Pipeline {
@@ -62,10 +60,10 @@ fn shader_code() -> Vec<u32> {
     // `expect` e não `?`: estes bytes são constantes de compilação. Se não forem
     // SPIR-V válido, o build gerou um .spv quebrado — bug nosso, não condição de
     // ambiente que o chamador possa tratar.
-    ash::util::read_spv(&mut Cursor::new(SHADER_SPV)).expect("o SPIR-V embutido é inválido")
+    vk::util::read_spv(&mut Cursor::new(SHADER_SPV)).expect("o SPIR-V embutido é inválido")
 }
 
-fn make_descriptor_set_layout(device: &Device) -> Result<vk_raii::DescriptorSetLayout> {
+fn make_descriptor_set_layout(device: &Device) -> Result<vk::raii::DescriptorSetLayout> {
     let bindings = [vk::DescriptorSetLayoutBinding::default()
         .binding(0)
         // podemos ter um array de uniform buffers
@@ -81,8 +79,8 @@ fn make_descriptor_set_layout(device: &Device) -> Result<vk_raii::DescriptorSetL
 
 fn make_pipeline_layout(
     device: &Device,
-    descriptor_set_layout: &vk_raii::DescriptorSetLayout,
-) -> Result<vk_raii::PipelineLayout> {
+    descriptor_set_layout: &vk::raii::DescriptorSetLayout,
+) -> Result<vk::raii::PipelineLayout> {
     // Anexa o descriptor set layout do UBO para os shaders lerem `set = 0, binding = 0`.
     let set_layouts = [descriptor_set_layout.handle()];
     let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
@@ -92,9 +90,9 @@ fn make_pipeline_layout(
 
 fn make_pipeline(
     device: &Device,
-    layout: &vk_raii::PipelineLayout,
+    layout: &vk::raii::PipelineLayout,
     format: vk::Format,
-) -> Result<vk_raii::Pipeline> {
+) -> Result<vk::raii::Pipeline> {
     let shader_module = device.create_shader_module(&shader_code())?;
 
     let binding_descriptions = [Vertex::binding_description()];

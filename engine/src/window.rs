@@ -1,12 +1,12 @@
 //! Equivalente a modules/engine/src/window.{h,cc}.
 //!
 //! Mesma SDL3 do engine C++, só que pela crate `sdl3`. Com a feature "ash"
-//! ligada, o SDL já devolve os handles tipados como `ash::vk::*`, então não
-//! existe nenhum cast entre o `VkInstance` do SDL e o do ash.
+//! ligada, o SDL já devolve os handles tipados, e o Cargo unifica essas
+//! bindings com as que a crate `vk` reexporta — então os tipos são os mesmos e
+//! não existe nenhum cast entre o `VkInstance` do SDL e o nosso.
 
 use std::ffi::CString;
 
-use ash::vk;
 use sdl3::video::{Window as SdlWindow, WindowFlags, WindowPos};
 use sdl3::{Sdl, VideoSubsystem};
 

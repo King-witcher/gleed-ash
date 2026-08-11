@@ -7,8 +7,6 @@
 //! sai por valor. Quem continua dono de verdade das ImageViews e dos semáforos
 //! é a `Swapchain`.
 
-use ash::vk;
-
 use crate::device::Device;
 use crate::prelude::*;
 
@@ -27,8 +25,8 @@ pub struct SwapchainImage {
 /// e some com ela; a view e o semáforo se destroem sozinhos.
 struct ImageResources {
     image: vk::Image,
-    image_view: vk_raii::ImageView,
-    render_finished: vk_raii::Semaphore,
+    image_view: vk::raii::ImageView,
+    render_finished: vk::raii::Semaphore,
 }
 
 impl ImageResources {
@@ -45,12 +43,12 @@ impl ImageResources {
 pub struct Swapchain {
     // A ORDEM DOS CAMPOS É A ORDEM DE DESTRUIÇÃO. As image views vêm das
     // imagens da swapchain, então morrem antes dela; e a swapchain antes da
-    // surface. O `vk_raii` garante que nada disso passa do device, mas a ordem
+    // surface. O `vk::raii` garante que nada disso passa do device, mas a ordem
     // entre irmãos continua sendo daqui.
     images: Vec<ImageResources>,
-    swapchain: vk_raii::Swapchain,
-    surface: vk_raii::Surface,
-    present_queue: vk_raii::Queue,
+    swapchain: vk::raii::Swapchain,
+    surface: vk::raii::Surface,
+    present_queue: vk::raii::Queue,
     device: Device,
     image_format: vk::Format,
     extent: vk::Extent2D,
@@ -58,7 +56,7 @@ pub struct Swapchain {
 }
 
 impl Swapchain {
-    pub fn new(device: Device, surface: vk_raii::Surface) -> Result<Self> {
+    pub fn new(device: Device, surface: vk::raii::Surface) -> Result<Self> {
         let present_queue = device.get_queue(device.present_index());
         let (swapchain, image_format, extent) =
             create_swapchain(&device, &surface, vk::SwapchainKHR::null())?;
@@ -182,9 +180,9 @@ impl Drop for Swapchain {
 
 fn create_swapchain(
     device: &Device,
-    surface: &vk_raii::Surface,
+    surface: &vk::raii::Surface,
     old: vk::SwapchainKHR,
-) -> Result<(vk_raii::Swapchain, vk::Format, vk::Extent2D)> {
+) -> Result<(vk::raii::Swapchain, vk::Format, vk::Extent2D)> {
     let support = device.query_surface_support(surface)?;
     let format = choose_swap_surface_format(&support.formats);
     let present_mode = choose_swap_present_mode(&support.present_modes);
@@ -219,7 +217,7 @@ fn create_swapchain(
 
 fn create_images(
     device: &Device,
-    swapchain: &vk_raii::Swapchain,
+    swapchain: &vk::raii::Swapchain,
     format: vk::Format,
 ) -> Result<Vec<ImageResources>> {
     let images = unsafe { swapchain.images() }.context("obter as imagens da swapchain")?;

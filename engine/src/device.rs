@@ -1,23 +1,21 @@
 //! Equivalente a modules/engine/src/device.{h,cc}.
 //!
 //! Diferença central em relação ao C++: o `vulkan_raii.hpp` destruía tudo
-//! sozinho. A `ash` é 1:1 com a API C — não há RAII. Quem cobre esse papel é a
-//! crate `vk_raii`, que é um wrapper fino: ela garante a ordem de destruição e
-//! nada além disso, então as chamadas continuam `unsafe` e é aqui que o engine
-//! assume o contrato delas.
+//! sozinho. As bindings cruas são 1:1 com a API C — não há RAII. Quem cobre
+//! esse papel é o módulo `vk::raii`, um wrapper fino: ele garante a ordem de
+//! destruição e nada além disso, então as chamadas continuam `unsafe` e é aqui
+//! que o engine assume o contrato delas.
 //!
-//! O `vk_raii::Device` é um handle clonável com o refcount por dentro, e cada
+//! O `vk::raii::Device` é um handle clonável com o refcount por dentro, e cada
 //! objeto criado a partir dele (semáforo, fence, shader module, queue) carrega
 //! um clone. Assim o `vkDestroyDevice` só acontece quando o último desses
 //! objetos morre, sem depender de ordem manual de destruição como no C++.
 
 use std::ffi::CStr;
 
-use ash::vk;
-
 use crate::prelude::*;
 
-/// O engine exige Vulkan 1.4. A `ash` 0.38 é gerada em cima dos headers 1.3,
+/// O engine exige Vulkan 1.4. As bindings são geradas em cima dos headers 1.3,
 /// então a constante 1.4 não existe e montamos a versão na mão.
 pub const API_VERSION_1_4: u32 = vk::make_api_version(0, 1, 4, 0);
 
@@ -37,16 +35,16 @@ pub struct SurfaceSupport {
 }
 
 /// Handle clonável para o device lógico: clonar custa um refcount do
-/// `vk_raii::Device` mais os dois índices de queue family.
+/// `vk::raii::Device` mais os dois índices de queue family.
 #[derive(Clone)]
 pub struct Device {
-    device: vk_raii::Device,
+    device: vk::raii::Device,
     graphics_index: u32,
     present_index: u32,
 }
 
 impl Device {
-    pub fn new(vulkan: &vk_raii::Instance, surface: &vk_raii::Surface) -> Result<Self> {
+    pub fn new(vulkan: &vk::raii::Instance, surface: &vk::raii::Surface) -> Result<Self> {
         // O `PhysicalDevice` já carrega a instance que o enumerou, então os
         // helpers abaixo não precisam recebê-la de novo.
         let physical_device = pick_physical_device(vulkan)?;
@@ -72,7 +70,7 @@ impl Device {
     ///
     /// As três consultas saem do `PhysicalDevice`, que usa o loader da própria
     /// `Surface` — o `Device` não guarda mais um loader só para isso.
-    pub fn query_surface_support(&self, surface: &vk_raii::Surface) -> Result<SurfaceSupport> {
+    pub fn query_surface_support(&self, surface: &vk::raii::Surface) -> Result<SurfaceSupport> {
         let physical_device = self.physical_device();
 
         // A surface veio da mesma instance que enumerou este physical device:
@@ -99,11 +97,11 @@ impl Device {
     pub fn create_command_pool(
         &self,
         create_info: &vk::CommandPoolCreateInfo,
-    ) -> Result<vk_raii::CommandPool> {
+    ) -> Result<vk::raii::CommandPool> {
         unsafe { self.device.create_command_pool(create_info) }.context("criar command pool")
     }
 
-    pub fn create_semaphore(&self) -> Result<vk_raii::Semaphore> {
+    pub fn create_semaphore(&self) -> Result<vk::raii::Semaphore> {
         unsafe {
             self.device
                 .create_semaphore(&vk::SemaphoreCreateInfo::default())
@@ -111,7 +109,7 @@ impl Device {
         .context("criar semáforo")
     }
 
-    pub fn create_fence(&self, signaled: bool) -> Result<vk_raii::Fence> {
+    pub fn create_fence(&self, signaled: bool) -> Result<vk::raii::Fence> {
         let flags = if signaled {
             vk::FenceCreateFlags::SIGNALED
         } else {
@@ -125,7 +123,7 @@ impl Device {
         .context("criar fence")
     }
 
-    pub fn create_shader_module(&self, code: &[u32]) -> Result<vk_raii::ShaderModule> {
+    pub fn create_shader_module(&self, code: &[u32]) -> Result<vk::raii::ShaderModule> {
         unsafe {
             self.device
                 .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(code))
@@ -142,41 +140,41 @@ impl Device {
     }
 
     /// O handle RAII. É por ele que os módulos criam objetos que se destroem
-    /// sozinhos; os métodos crus da `ash` chegam pelo `Deref` dele.
-    pub fn vk(&self) -> &vk_raii::Device {
+    /// sozinhos; as chamadas cruas chegam pelo `Deref` dele.
+    pub fn vk(&self) -> &vk::raii::Device {
         &self.device
     }
 
-    /// A tabela de dispatch da `ash`, para as chamadas que não produzem um
-    /// objeto RAII e para as bibliotecas que só falam `ash`.
-    pub fn raw(&self) -> &ash::Device {
+    /// A tabela de dispatch, para as chamadas que não produzem um objeto RAII e
+    /// para as bibliotecas que falam Vulkan por conta própria.
+    pub fn raw(&self) -> &vk::raw::Device {
         &self.device
     }
 
     /// A instance que criou este device. Quem precisa dela pega daqui em vez de
     /// recebê-la de novo por fora.
-    pub fn vulkan(&self) -> &vk_raii::Instance {
+    pub fn vulkan(&self) -> &vk::raii::Instance {
         self.device.instance()
     }
 
-    /// A instance como a `ash` a enxerga — hoje só a `gpu-allocator` precisa.
-    pub fn vulkan_raw(&self) -> &ash::Instance {
+    /// A instance com a tabela de dispatch — hoje só a `gpu-allocator` precisa.
+    pub fn vulkan_raw(&self) -> &vk::raw::Instance {
         self.device.instance()
     }
 
-    pub fn physical_device(&self) -> &vk_raii::PhysicalDevice {
+    pub fn physical_device(&self) -> &vk::raii::PhysicalDevice {
         self.device.physical_device()
     }
 
-    /// O handle cru, para as bibliotecas que só falam `ash` — hoje a
-    /// `gpu-allocator`, no `Allocator::new`.
+    /// O handle pelado, para as bibliotecas que falam Vulkan por conta própria
+    /// — hoje a `gpu-allocator`, no `Allocator::new`.
     pub fn physical_device_handle(&self) -> vk::PhysicalDevice {
         self.physical_device().handle()
     }
 
     /// A queue é dona do device por refcount: os `vkQueue*` saem da tabela de
     /// dispatch dele.
-    pub fn get_queue(&self, family_index: u32) -> vk_raii::Queue {
+    pub fn get_queue(&self, family_index: u32) -> vk::raii::Queue {
         // A família saiu do `VkDeviceCreateInfo` deste device e só pedimos uma
         // queue nela.
         unsafe { self.device.queue(family_index, 0) }
@@ -187,7 +185,7 @@ impl Device {
     }
 }
 
-fn inspect_device(physical_device: &vk_raii::PhysicalDevice) {
+fn inspect_device(physical_device: &vk::raii::PhysicalDevice) {
     let (properties, mem_properties) = unsafe {
         (
             physical_device.properties(),
@@ -229,7 +227,7 @@ fn inspect_device(physical_device: &vk_raii::PhysicalDevice) {
     }
 }
 
-fn is_device_suitable(device: &vk_raii::PhysicalDevice) -> bool {
+fn is_device_suitable(device: &vk::raii::PhysicalDevice) -> bool {
     let (properties, features) = unsafe { (device.properties(), device.features()) };
 
     if properties.api_version < API_VERSION_1_4 {
@@ -244,7 +242,7 @@ fn is_device_suitable(device: &vk_raii::PhysicalDevice) -> bool {
     true
 }
 
-fn pick_physical_device(vulkan: &vk_raii::Instance) -> Result<vk_raii::PhysicalDevice> {
+fn pick_physical_device(vulkan: &vk::raii::Instance) -> Result<vk::raii::PhysicalDevice> {
     let devices =
         unsafe { vulkan.enumerate_physical_devices() }.context("enumerar os physical devices")?;
     if devices.is_empty() {
@@ -262,8 +260,8 @@ fn pick_physical_device(vulkan: &vk_raii::Instance) -> Result<vk_raii::PhysicalD
 }
 
 fn find_graphics_queue_family(
-    surface: &vk_raii::Surface,
-    device: &vk_raii::PhysicalDevice,
+    surface: &vk::raii::Surface,
+    device: &vk::raii::PhysicalDevice,
 ) -> Result<u32> {
     let family_properties = unsafe { device.queue_family_properties() };
 
@@ -289,9 +287,9 @@ fn find_graphics_queue_family(
 }
 
 fn create_logical_device(
-    physical_device: &vk_raii::PhysicalDevice,
+    physical_device: &vk::raii::PhysicalDevice,
     queue_family_index: u32,
-) -> Result<vk_raii::Device> {
+) -> Result<vk::raii::Device> {
     let queue_priorities = [0.5f32];
     let queue_create_infos = [vk::DeviceQueueCreateInfo::default()
         .queue_family_index(queue_family_index)

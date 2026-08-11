@@ -1,5 +1,3 @@
-use ash::vk;
-
 use super::uniform::UniformBufferObject;
 use super::MAX_FRAMES_IN_FLIGHT;
 use crate::allocator::{AllocMode, Allocator, Buffer};
@@ -11,18 +9,18 @@ pub(super) struct FrameInFlight {
     /// Um command pool por frame in flight: resetar o pool inteiro por frame é
     /// mais barato do que resetar buffer a buffer. O buffer carrega um clone do
     /// pool, então guardar os dois aqui não impõe ordem nenhuma entre eles.
-    pub(super) command_buffer: vk_raii::CommandBuffer,
-    pub(super) command_pool: vk_raii::CommandPool,
+    pub(super) command_buffer: vk::raii::CommandBuffer,
+    pub(super) command_pool: vk::raii::CommandPool,
     pub(super) descriptor_set: vk::DescriptorSet,
-    pub(super) image_available: vk_raii::Semaphore,
-    pub(super) fence: vk_raii::Fence,
+    pub(super) image_available: vk::raii::Semaphore,
+    pub(super) fence: vk::raii::Fence,
 }
 
 impl FrameInFlight {
     pub(super) fn new(
         device: &Device,
         allocator: &Allocator,
-        descriptor_pool: &vk_raii::DescriptorPool,
+        descriptor_pool: &vk::raii::DescriptorPool,
         layout: vk::DescriptorSetLayout,
     ) -> Result<Self> {
         let ubo = make_ubo(allocator)?;
@@ -60,7 +58,7 @@ impl FrameInFlight {
     }
 }
 
-fn make_command_pool(device: &Device) -> Result<vk_raii::CommandPool> {
+fn make_command_pool(device: &Device) -> Result<vk::raii::CommandPool> {
     // Sem RESET_COMMAND_BUFFER: o pool inteiro é resetado no início de cada
     // frame, que é o caminho mais barato e dispensa a flag.
     let info = vk::CommandPoolCreateInfo::default().queue_family_index(device.graphics_index());
@@ -68,7 +66,7 @@ fn make_command_pool(device: &Device) -> Result<vk_raii::CommandPool> {
     device.create_command_pool(&info)
 }
 
-pub(super) fn make_descriptor_pool(device: &Device) -> Result<vk_raii::DescriptorPool> {
+pub(super) fn make_descriptor_pool(device: &Device) -> Result<vk::raii::DescriptorPool> {
     // Um descriptor de uniform buffer por frame in flight.
     let pool_sizes = [vk::DescriptorPoolSize::default()
         .ty(vk::DescriptorType::UNIFORM_BUFFER)
@@ -93,7 +91,7 @@ fn make_ubo(allocator: &Allocator) -> Result<Buffer> {
 
 fn make_descriptor_set(
     device: &Device,
-    pool: &vk_raii::DescriptorPool,
+    pool: &vk::raii::DescriptorPool,
     layout: vk::DescriptorSetLayout,
 ) -> Result<vk::DescriptorSet> {
     let set_layouts = [layout];

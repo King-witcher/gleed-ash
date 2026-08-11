@@ -21,8 +21,6 @@ mod uniform;
 use std::rc::Rc;
 use std::time::Instant;
 
-use ash::vk;
-
 use crate::allocator::Allocator;
 use crate::device::Device;
 use crate::pipeline::Pipeline;
@@ -42,9 +40,9 @@ pub struct Renderer {
     // FREE_DESCRIPTOR_SET que o C++ usava (lá cada vk::raii::DescriptorSet se
     // liberava individualmente).
     frames: Vec<FrameInFlight>,
-    descriptor_pool: vk_raii::DescriptorPool,
+    descriptor_pool: vk::raii::DescriptorPool,
     pipeline: Pipeline,
-    graphics_queue: vk_raii::Queue,
+    graphics_queue: vk::raii::Queue,
     #[allow(dead_code)]
     allocator: Rc<Allocator>,
     device: Device,

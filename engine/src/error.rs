@@ -1,6 +1,6 @@
 //! Não tem equivalente no C++: lá o `vulkan_raii.hpp` lançava `vk::SystemError`
 //! sozinho a cada chamada que falhasse, ninguém capturava, e o erro subia até
-//! terminar o processo. A `ash` é 1:1 com a API C e não lança nada — toda
+//! terminar o processo. As bindings são 1:1 com a API C e não lançam nada — toda
 //! chamada devolve `VkResult<T>`, então a escolha passa a ser explícita.
 //!
 //! A regra usada no engine inteiro é a mesma dos dois lados:
@@ -19,7 +19,6 @@
 
 use std::fmt;
 
-use ash::vk;
 use gpu_allocator::AllocationError;
 
 /// Mesmo padrão de `io::Result`: o alias esconde o tipo de erro, que é sempre

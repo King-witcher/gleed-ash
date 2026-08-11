@@ -2,20 +2,18 @@
 
 use std::rc::Rc;
 
-use ash::vk;
-
 use crate::allocator::{as_bytes, AllocMode, Allocator, Buffer};
 use crate::device::Device;
 use crate::prelude::*;
 
 pub struct TransferContext {
     allocator: Rc<Allocator>,
-    queue: vk_raii::Queue,
+    queue: vk::raii::Queue,
     /// Um único command buffer reciclado a cada upload: o pool é resetado antes
     /// de gravar, em vez de alocar e liberar um buffer por vez.
-    command_buffer: vk_raii::CommandBuffer,
-    pool: vk_raii::CommandPool,
-    fence: vk_raii::Fence,
+    command_buffer: vk::raii::CommandBuffer,
+    pool: vk::raii::CommandPool,
+    fence: vk::raii::Fence,
 }
 
 impl TransferContext {
@@ -44,7 +42,7 @@ impl TransferContext {
     /// mesma regra do Vulkan, só que checada pelo compilador.
     pub fn immediate_submit(
         &mut self,
-        record: impl FnOnce(&mut vk_raii::CommandBuffer),
+        record: impl FnOnce(&mut vk::raii::CommandBuffer),
     ) -> Result<()> {
         // A espera da fence no fim da chamada anterior já garantiu que a GPU
         // terminou com este buffer, e o `&mut self` que nada mais está gravando.
@@ -118,7 +116,7 @@ impl TransferContext {
     }
 }
 
-fn make_command_pool(device: &Device) -> Result<vk_raii::CommandPool> {
+fn make_command_pool(device: &Device) -> Result<vk::raii::CommandPool> {
     let info = vk::CommandPoolCreateInfo::default()
         // TRANSIENT: o conteúdo gravado é efêmero — um upload e o pool é resetado.
         .flags(vk::CommandPoolCreateFlags::TRANSIENT)

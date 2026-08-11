@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-use ash::vk;
 use glam::camera::rh::proj::vulkan::perspective as vulkan_perspective;
 use glam::camera::rh::view::look_at_mat4;
 use glam::{Mat4, Vec3};
@@ -36,13 +35,13 @@ impl Drop for MustSubmit {
 /// tocado por mais ninguém.
 pub struct Frame<'a> {
     pub(super) guard: MustSubmit,
-    pub(super) command_buffer: &'a mut vk_raii::CommandBuffer,
+    pub(super) command_buffer: &'a mut vk::raii::CommandBuffer,
     pub(super) ubo: &'a mut Buffer,
     pub(super) descriptor_set: vk::DescriptorSet,
-    pub(super) image_available: &'a vk_raii::Semaphore,
-    pub(super) fence: &'a vk_raii::Fence,
+    pub(super) image_available: &'a vk::raii::Semaphore,
+    pub(super) fence: &'a vk::raii::Fence,
     pub(super) pipeline: &'a Pipeline,
-    pub(super) queue: &'a vk_raii::Queue,
+    pub(super) queue: &'a vk::raii::Queue,
     pub(super) swapchain_image: SwapchainImage,
     pub(super) start_time: Instant,
 }

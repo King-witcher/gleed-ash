@@ -4,7 +4,7 @@ use std::ops::Deref;
 use ash::khr;
 use ash::vk;
 
-use crate::Instance;
+use super::Instance;
 
 /// Owns a `VkSurfaceKHR` and the `VK_KHR_surface` loader used to query and
 /// destroy it. The `Instance` clone keeps the parent alive, so
@@ -14,7 +14,7 @@ use crate::Instance;
 /// is where Vulkan puts them; they reach this loader through
 /// [`loader`](Self::loader).
 ///
-/// [`PhysicalDevice`]: crate::PhysicalDevice
+/// [`PhysicalDevice`]: crate::raii::PhysicalDevice
 pub struct Surface {
     raw: vk::SurfaceKHR,
     loader: khr::surface::Instance,

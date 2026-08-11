@@ -2,7 +2,6 @@
 //!
 //! TODO (herdado do C++): desamarrar do Vulkan.
 
-use ash::vk;
 use glam::Vec3;
 
 // repr(C) é obrigatório: o layout precisa casar com o que as

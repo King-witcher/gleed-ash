@@ -4,7 +4,7 @@ use std::ops::Deref;
 use ash::prelude::VkResult;
 use ash::vk;
 
-use crate::{CommandPool, Device};
+use super::{CommandPool, Device};
 
 /// Owns a `VkCommandBuffer` and frees it on drop.
 ///

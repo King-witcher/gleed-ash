@@ -4,7 +4,7 @@ use std::ops::Deref;
 use ash::prelude::VkResult;
 use ash::vk;
 
-use crate::Device;
+use super::Device;
 
 /// A queue owned by the device. Nothing is created or destroyed here, but the
 /// `Device` clone is still needed: the `vkQueue*` entry points come from the

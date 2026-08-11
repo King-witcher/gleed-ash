@@ -7,7 +7,6 @@
 use std::ffi::{c_char, CString};
 use std::rc::Rc;
 
-use ash::vk;
 use glam::Vec3;
 
 use crate::allocator::Allocator;
@@ -44,7 +43,7 @@ impl Engine {
 
         let surface = {
             let handle = unsafe { window.vulkan_surface(vulkan.handle()) }?;
-            unsafe { vk_raii::Surface::from_raw(vulkan.clone(), handle) }
+            unsafe { vk::raii::Surface::from_raw(vulkan.clone(), handle) }
         };
 
         let device = Device::new(&vulkan, &surface)?;
@@ -133,7 +132,7 @@ impl Drop for Engine {
     }
 }
 
-fn create_instance(window: &Window) -> Result<vk_raii::Instance> {
+fn create_instance(window: &Window) -> Result<vk::raii::Instance> {
     let app_info = vk::ApplicationInfo::default()
         .application_name(c"GLEED Test")
         .application_version(vk::make_api_version(0, 1, 0, 0))
@@ -164,10 +163,10 @@ fn create_instance(window: &Window) -> Result<vk_raii::Instance> {
 
     // `LoadingError` não é erro de Vulkan nem de SDL, então não passa pelo
     // `Context`: não há VkResult nenhum, só a ausência do loader na máquina.
-    let entry = unsafe { ash::Entry::load() }
+    let entry = unsafe { vk::Entry::load() }
         .map_err(|error| Error::unsupported(format!("carregar o loader do Vulkan: {error}")))?;
 
-    let instance = unsafe { vk_raii::Instance::new(entry, &create_info) }
+    let instance = unsafe { vk::raii::Instance::new(entry, &create_info) }
         .context("criar a instance do Vulkan")?;
     println!("Vulkan instance created.");
 
