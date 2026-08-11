@@ -94,7 +94,7 @@ pub struct Allocator {
 impl Allocator {
     pub fn new(device: Device) -> Result<Self> {
         let inner = GpuAllocator::new(&AllocatorCreateDesc {
-            instance: device.vulkan().raw().clone(),
+            instance: device.vulkan_raw().clone(),
             device: device.raw().clone(),
             physical_device: device.physical_device_handle(),
             debug_settings: Default::default(),

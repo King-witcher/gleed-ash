@@ -44,7 +44,7 @@ impl Engine {
 
         let surface = {
             let handle = unsafe { window.vulkan_surface(vulkan.handle()) }?;
-            unsafe { vk_raii::Surface::from_handle(handle, vulkan.clone()) }
+            unsafe { vk_raii::Surface::from_raw(vulkan.clone(), handle) }
         };
 
         let device = Device::new(&vulkan, &surface)?;
@@ -88,7 +88,7 @@ impl Engine {
         let square_indices: [u32; 6] = [0, 1, 2, 2, 3, 0];
 
         let meshes = vec![Mesh::new(
-            &self.transfer,
+            &mut self.transfer,
             &square_vertices,
             &square_indices,
         )?];
@@ -114,11 +114,12 @@ impl Engine {
             return Ok(());
         }
 
-        let mut render_pass = self.renderer.begin_render_pass(&mut self.swapchain)?;
+        // `frame` empresta o renderer; a swapchain é campo disjunto, então
+        // continua acessível para ler a extent e para o present no submit.
+        let mut frame = self.renderer.begin_frame(&mut self.swapchain)?;
         let extent = self.swapchain.extent();
-        self.renderer.draw_scene(&mut render_pass, meshes, extent);
-        self.renderer
-            .submit_frame(&mut self.swapchain, render_pass)?;
+        frame.draw_scene(meshes, extent);
+        frame.submit(&mut self.swapchain)?;
 
         Ok(())
     }
@@ -161,8 +162,13 @@ fn create_instance(window: &Window) -> Result<vk_raii::Instance> {
         .enabled_layer_names(&layer_ptrs)
         .enabled_extension_names(&extension_ptrs);
 
-    let instance =
-        unsafe { vk_raii::Instance::new(&create_info) }.context("criar a instance do Vulkan")?;
+    // `LoadingError` não é erro de Vulkan nem de SDL, então não passa pelo
+    // `Context`: não há VkResult nenhum, só a ausência do loader na máquina.
+    let entry = unsafe { ash::Entry::load() }
+        .map_err(|error| Error::unsupported(format!("carregar o loader do Vulkan: {error}")))?;
+
+    let instance = unsafe { vk_raii::Instance::new(entry, &create_info) }
+        .context("criar a instance do Vulkan")?;
     println!("Vulkan instance created.");
 
     Ok(instance)

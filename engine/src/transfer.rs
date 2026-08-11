@@ -9,11 +9,12 @@ use crate::device::Device;
 use crate::prelude::*;
 
 pub struct TransferContext {
-    device: Device,
     allocator: Rc<Allocator>,
     queue: vk_raii::Queue,
-    pool: vk::CommandPool,
-    /// RAII: carrega um clone do device e se destrói junto com o contexto.
+    /// Um único command buffer reciclado a cada upload: o pool é resetado antes
+    /// de gravar, em vez de alocar e liberar um buffer por vez.
+    command_buffer: vk_raii::CommandBuffer,
+    pool: vk_raii::CommandPool,
     fence: vk_raii::Fence,
 }
 
@@ -21,69 +22,61 @@ impl TransferContext {
     pub fn new(device: Device, allocator: Rc<Allocator>) -> Result<Self> {
         let queue = device.get_queue(device.graphics_index());
         let pool = make_command_pool(&device)?;
-        // Não sinalizada: o primeiro wait_for_fence precisa realmente esperar a
-        // GPU. Se começasse sinalizada, a espera retornaria antes da cópia terminar.
+        let command_buffer = unsafe { pool.allocate_one(vk::CommandBufferLevel::PRIMARY) }
+            .context("alocar transfer command buffer")?;
+        // Não sinalizada: a primeira espera precisa realmente esperar a GPU. Se
+        // começasse sinalizada, ela retornaria antes da cópia terminar.
         let fence = device.create_fence(false)?;
 
         Ok(Self {
-            device,
             allocator,
             queue,
+            command_buffer,
             pool,
             fence,
         })
     }
 
-    /// Grava um closure em um command buffer descartável, submete e BLOQUEIA até
-    /// a GPU terminar. Usado para uploads, transições de layout, etc.
-    pub fn immediate_submit(&self, record: impl FnOnce(vk::CommandBuffer)) -> Result<()> {
-        let raw = self.device.raw();
+    /// Grava um closure no command buffer do contexto, submete e BLOQUEIA até a
+    /// GPU terminar. Usado para uploads, transições de layout, etc.
+    ///
+    /// `&mut self` porque gravar exige acesso exclusivo ao command buffer — é a
+    /// mesma regra do Vulkan, só que checada pelo compilador.
+    pub fn immediate_submit(
+        &mut self,
+        record: impl FnOnce(&mut vk_raii::CommandBuffer),
+    ) -> Result<()> {
+        // A espera da fence no fim da chamada anterior já garantiu que a GPU
+        // terminou com este buffer, e o `&mut self` que nada mais está gravando.
+        unsafe { self.pool.reset(vk::CommandPoolResetFlags::empty()) }
+            .context("resetar o transfer command pool")?;
 
-        let alloc_info = vk::CommandBufferAllocateInfo::default()
-            .command_pool(self.pool)
-            .command_buffer_count(1)
-            .level(vk::CommandBufferLevel::PRIMARY);
-
-        let buffers = unsafe { raw.allocate_command_buffers(&alloc_info) }
-            .context("alocar transfer command buffer")?;
-        let cmd = buffers[0];
-
-        unsafe {
-            raw.begin_command_buffer(
-                cmd,
-                &vk::CommandBufferBeginInfo::default()
-                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe { self.command_buffer.begin(&begin_info) }
             .context("iniciar transfer command buffer")?;
 
-            record(cmd);
+        record(&mut self.command_buffer);
 
-            raw.end_command_buffer(cmd)
-                .context("finalizar transfer command buffer")?;
+        unsafe { self.command_buffer.end() }.context("finalizar transfer command buffer")?;
 
-            let cmd_infos = [vk::CommandBufferSubmitInfo::default().command_buffer(cmd)];
-            let submit_info = vk::SubmitInfo2::default().command_buffer_infos(&cmd_infos);
+        let cmd_infos =
+            [vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffer.handle())];
+        let submit_info = vk::SubmitInfo2::default().command_buffer_infos(&cmd_infos);
 
-            self.queue
-                .submit2(&[submit_info], Some(&self.fence))
-                .context("submeter transfer command buffer")?;
-        }
+        // A fence está livre: a chamada anterior esperou e resetou ela, e o
+        // buffer acabou de sair do `end`.
+        unsafe { self.queue.submit2(&[submit_info], self.fence.handle()) }
+            .context("submeter transfer command buffer")?;
 
         // Bloqueia até a GPU terminar e deixa a fence pronta para o próximo uso.
-        self.fence
-            .wait_and_reset()
-            .context("esperar a transferência terminar")?;
-
-        // Diferente do C++ (onde o vk::raii::CommandBuffer se devolvia sozinho
-        // ao pool), aqui a devolução é explícita.
-        unsafe { raw.free_command_buffers(self.pool, &buffers) };
-
-        Ok(())
+        unsafe { self.fence.wait(u64::MAX) }.context("esperar a transferência terminar")?;
+        unsafe { self.fence.reset() }.context("resetar a fence de transferência")
     }
 
     /// Aloca um buffer device-local (VRAM) e sobe `data` para ele via staging.
     /// O buffer de staging host-visible é criado e liberado internamente.
-    pub fn upload_buffer(&self, data: &[u8], usage: vk::BufferUsageFlags) -> Result<Buffer> {
+    pub fn upload_buffer(&mut self, data: &[u8], usage: vk::BufferUsageFlags) -> Result<Buffer> {
         // 1. Staging host-visible: a CPU escreve os dados aqui.
         let staging_info = vk::BufferCreateInfo::default()
             .size(data.len() as u64)
@@ -104,10 +97,11 @@ impl TransferContext {
         let gpu = self.allocator.allocate(&gpu_info, AllocMode::DeviceLocal)?;
 
         // 3. Copia staging -> device-local na GPU e espera a cópia terminar.
-        let raw = self.device.raw();
-        self.immediate_submit(|cmd| {
+        self.immediate_submit(|command_buffer| {
             let region = vk::BufferCopy::default().size(data.len() as u64);
-            unsafe { raw.cmd_copy_buffer(cmd, staging.vk_buffer(), gpu.vk_buffer(), &[region]) };
+            // O buffer está gravando (immediate_submit acabou de dar begin) e os
+            // dois buffers estão vivos até o fim desta função.
+            unsafe { command_buffer.copy_buffer(staging.vk_buffer(), gpu.vk_buffer(), &[region]) };
         })?;
 
         // `staging` é destruído aqui — seguro, já que immediate_submit esperou a
@@ -116,7 +110,7 @@ impl TransferContext {
     }
 
     pub fn upload_slice<T: Copy>(
-        &self,
+        &mut self,
         values: &[T],
         usage: vk::BufferUsageFlags,
     ) -> Result<Buffer> {
@@ -124,17 +118,11 @@ impl TransferContext {
     }
 }
 
-impl Drop for TransferContext {
-    fn drop(&mut self) {
-        unsafe { self.device.raw().destroy_command_pool(self.pool, None) };
-    }
-}
-
-fn make_command_pool(device: &Device) -> Result<vk::CommandPool> {
+fn make_command_pool(device: &Device) -> Result<vk_raii::CommandPool> {
     let info = vk::CommandPoolCreateInfo::default()
-        // TRANSIENT: os command buffers são efêmeros (um upload e são liberados).
+        // TRANSIENT: o conteúdo gravado é efêmero — um upload e o pool é resetado.
         .flags(vk::CommandPoolCreateFlags::TRANSIENT)
         .queue_family_index(device.graphics_index());
 
-    unsafe { device.raw().create_command_pool(&info, None) }.context("criar transfer command pool")
+    device.create_command_pool(&info)
 }

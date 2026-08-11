@@ -16,49 +16,39 @@ use crate::vertex::Vertex;
 const SHADER_SPV: &[u8] = include_bytes!("shaders/mesh.spv");
 
 pub struct Pipeline {
-    device: Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    layout: vk::PipelineLayout,
-    pipeline: vk::Pipeline,
+    // A ORDEM DOS CAMPOS É A ORDEM DE DESTRUIÇÃO: a pipeline morre antes dos
+    // layouts que a descrevem. Cada um deles segura o device por refcount, então
+    // não há mais `impl Drop` aqui — nem o vazamento que existia quando a
+    // criação da pipeline falhava depois dos layouts.
+    pipeline: vk_raii::Pipeline,
+    layout: vk_raii::PipelineLayout,
+    descriptor_set_layout: vk_raii::DescriptorSetLayout,
 }
 
 impl Pipeline {
     pub fn new(device: Device, image_format: vk::Format) -> Result<Self> {
         let descriptor_set_layout = make_descriptor_set_layout(&device)?;
-        let layout = make_pipeline_layout(&device, descriptor_set_layout)?;
-        // Se make_pipeline falhar, os dois layouts acima vazam: o processo encerra logo depois.
-        let pipeline = make_pipeline(&device, layout, image_format)?;
+        let layout = make_pipeline_layout(&device, &descriptor_set_layout)?;
+        let pipeline = make_pipeline(&device, &layout, image_format)?;
 
         Ok(Self {
-            device,
-            descriptor_set_layout,
-            layout,
             pipeline,
+            layout,
+            descriptor_set_layout,
         })
     }
 
-    /// Precisa ser bindado dentro de um renderpass.
+    /// Precisa ser bindada dentro de um renderpass.
     pub fn vk_pipeline(&self) -> vk::Pipeline {
-        self.pipeline
+        self.pipeline.handle()
     }
 
     pub fn layout(&self) -> vk::PipelineLayout {
-        self.layout
+        self.layout.handle()
     }
 
     pub fn descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
-        self.descriptor_set_layout
-    }
-}
-
-impl Drop for Pipeline {
-    fn drop(&mut self) {
-        let raw = self.device.raw();
-        unsafe {
-            raw.destroy_pipeline(self.pipeline, None);
-            raw.destroy_pipeline_layout(self.layout, None);
-            raw.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-        }
+        self.descriptor_set_layout.handle()
     }
 }
 
@@ -75,7 +65,7 @@ fn shader_code() -> Vec<u32> {
     ash::util::read_spv(&mut Cursor::new(SHADER_SPV)).expect("o SPIR-V embutido é inválido")
 }
 
-fn make_descriptor_set_layout(device: &Device) -> Result<vk::DescriptorSetLayout> {
+fn make_descriptor_set_layout(device: &Device) -> Result<vk_raii::DescriptorSetLayout> {
     let bindings = [vk::DescriptorSetLayoutBinding::default()
         .binding(0)
         // podemos ter um array de uniform buffers
@@ -85,27 +75,26 @@ fn make_descriptor_set_layout(device: &Device) -> Result<vk::DescriptorSetLayout
 
     let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
-    unsafe { device.raw().create_descriptor_set_layout(&info, None) }
+    unsafe { device.vk().create_descriptor_set_layout(&info) }
         .context("criar descriptor set layout")
 }
 
 fn make_pipeline_layout(
     device: &Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-) -> Result<vk::PipelineLayout> {
+    descriptor_set_layout: &vk_raii::DescriptorSetLayout,
+) -> Result<vk_raii::PipelineLayout> {
     // Anexa o descriptor set layout do UBO para os shaders lerem `set = 0, binding = 0`.
-    let set_layouts = [descriptor_set_layout];
+    let set_layouts = [descriptor_set_layout.handle()];
     let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
 
-    unsafe { device.raw().create_pipeline_layout(&info, None) }.context("criar pipeline layout")
+    unsafe { device.vk().create_pipeline_layout(&info) }.context("criar pipeline layout")
 }
 
 fn make_pipeline(
     device: &Device,
-    layout: vk::PipelineLayout,
+    layout: &vk_raii::PipelineLayout,
     format: vk::Format,
-) -> Result<vk::Pipeline> {
-    let raw = device.raw();
+) -> Result<vk_raii::Pipeline> {
     let shader_module = device.create_shader_module(&shader_code())?;
 
     let binding_descriptions = [Vertex::binding_description()];
@@ -179,18 +168,21 @@ fn make_pipeline(
         .multisample_state(&multisampling)
         .color_blend_state(&color_blending)
         .dynamic_state(&dynamic_state)
-        .layout(layout);
+        .layout(layout.handle());
 
-    // Sem cache por enquanto
-    let created =
-        unsafe { raw.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None) };
+    // Sem cache por enquanto. As structs encadeadas acima continuam vivas até
+    // aqui, e o shader module some sozinho no fim da função — inclusive no
+    // caminho de erro. O erro não é um VkResult puro porque a criação pode
+    // falhar em parte das pipelines do lote.
+    let created = unsafe {
+        device
+            .vk()
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info])
+    };
 
-    // O shader module só precisa viver até aqui, e some sozinho no fim da função
-    // — inclusive no caminho de erro abaixo. O erro não é um VkResult puro
-    // porque a criação pode falhar em parte das pipelines do lote.
-    let pipelines = created
+    let mut pipelines = created
         .map_err(|(_, result)| result)
         .context("criar a graphics pipeline")?;
 
-    Ok(pipelines[0])
+    Ok(pipelines.remove(0))
 }

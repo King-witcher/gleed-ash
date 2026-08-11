@@ -2,8 +2,9 @@
 //!
 //! Diferença central em relação ao C++: o `vulkan_raii.hpp` destruía tudo
 //! sozinho. A `ash` é 1:1 com a API C — não há RAII. Quem cobre esse papel é a
-//! crate `vk_raii`, e é por ela que este módulo fala com o Vulkan: não sobrou
-//! nenhuma chamada `unsafe` aqui.
+//! crate `vk_raii`, que é um wrapper fino: ela garante a ordem de destruição e
+//! nada além disso, então as chamadas continuam `unsafe` e é aqui que o engine
+//! assume o contrato delas.
 //!
 //! O `vk_raii::Device` é um handle clonável com o refcount por dentro, e cada
 //! objeto criado a partir dele (semáforo, fence, shader module, queue) carrega
@@ -74,27 +75,40 @@ impl Device {
     pub fn query_surface_support(&self, surface: &vk_raii::Surface) -> Result<SurfaceSupport> {
         let physical_device = self.physical_device();
 
-        let capabilities = physical_device
-            .surface_capabilities(surface)
-            .context("obter as surface capabilities do physical device")?;
-        let formats = physical_device
-            .surface_formats(surface)
-            .context("obter os surface formats do physical device")?;
-        let present_modes = physical_device
-            .surface_present_modes(surface)
-            .context("obter os surface present modes do physical device")?;
+        // A surface veio da mesma instance que enumerou este physical device:
+        // as duas saem do `Engine::new`.
+        unsafe {
+            let capabilities = physical_device
+                .surface_capabilities(surface)
+                .context("obter as surface capabilities do physical device")?;
+            let formats = physical_device
+                .surface_formats(surface)
+                .context("obter os surface formats do physical device")?;
+            let present_modes = physical_device
+                .surface_present_modes(surface)
+                .context("obter os surface present modes do physical device")?;
 
-        Ok(SurfaceSupport {
-            capabilities,
-            formats,
-            present_modes,
-        })
+            Ok(SurfaceSupport {
+                capabilities,
+                formats,
+                present_modes,
+            })
+        }
+    }
+
+    pub fn create_command_pool(
+        &self,
+        create_info: &vk::CommandPoolCreateInfo,
+    ) -> Result<vk_raii::CommandPool> {
+        unsafe { self.device.create_command_pool(create_info) }.context("criar command pool")
     }
 
     pub fn create_semaphore(&self) -> Result<vk_raii::Semaphore> {
-        self.device
-            .create_semaphore(&vk::SemaphoreCreateInfo::default())
-            .context("criar semáforo")
+        unsafe {
+            self.device
+                .create_semaphore(&vk::SemaphoreCreateInfo::default())
+        }
+        .context("criar semáforo")
     }
 
     pub fn create_fence(&self, signaled: bool) -> Result<vk_raii::Fence> {
@@ -104,15 +118,19 @@ impl Device {
             vk::FenceCreateFlags::empty()
         };
 
-        self.device
-            .create_fence(&vk::FenceCreateInfo::default().flags(flags))
-            .context("criar fence")
+        unsafe {
+            self.device
+                .create_fence(&vk::FenceCreateInfo::default().flags(flags))
+        }
+        .context("criar fence")
     }
 
     pub fn create_shader_module(&self, code: &[u32]) -> Result<vk_raii::ShaderModule> {
-        self.device
-            .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(code))
-            .context("criar shader module")
+        unsafe {
+            self.device
+                .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(code))
+        }
+        .context("criar shader module")
     }
 
     pub fn graphics_index(&self) -> u32 {
@@ -123,13 +141,26 @@ impl Device {
         self.present_index
     }
 
-    pub fn raw(&self) -> &ash::Device {
-        self.device.raw()
+    /// O handle RAII. É por ele que os módulos criam objetos que se destroem
+    /// sozinhos; os métodos crus da `ash` chegam pelo `Deref` dele.
+    pub fn vk(&self) -> &vk_raii::Device {
+        &self.device
     }
 
-    /// A instance que criou este device. Quem precisa dela (o allocator, os
-    /// loaders de extensão) pega daqui em vez de recebê-la de novo por fora.
+    /// A tabela de dispatch da `ash`, para as chamadas que não produzem um
+    /// objeto RAII e para as bibliotecas que só falam `ash`.
+    pub fn raw(&self) -> &ash::Device {
+        &self.device
+    }
+
+    /// A instance que criou este device. Quem precisa dela pega daqui em vez de
+    /// recebê-la de novo por fora.
     pub fn vulkan(&self) -> &vk_raii::Instance {
+        self.device.instance()
+    }
+
+    /// A instance como a `ash` a enxerga — hoje só a `gpu-allocator` precisa.
+    pub fn vulkan_raw(&self) -> &ash::Instance {
         self.device.instance()
     }
 
@@ -140,25 +171,29 @@ impl Device {
     /// O handle cru, para as bibliotecas que só falam `ash` — hoje a
     /// `gpu-allocator`, no `Allocator::new`.
     pub fn physical_device_handle(&self) -> vk::PhysicalDevice {
-        self.physical_device().raw()
+        self.physical_device().handle()
     }
 
     /// A queue é dona do device por refcount: os `vkQueue*` saem da tabela de
     /// dispatch dele.
     pub fn get_queue(&self, family_index: u32) -> vk_raii::Queue {
-        self.device.queue(family_index, 0)
+        // A família saiu do `VkDeviceCreateInfo` deste device e só pedimos uma
+        // queue nela.
+        unsafe { self.device.queue(family_index, 0) }
     }
 
     pub fn wait_idle(&self) -> Result<()> {
-        self.device
-            .wait_idle()
-            .context("esperar o device ficar idle")
+        unsafe { self.device.device_wait_idle() }.context("esperar o device ficar idle")
     }
 }
 
 fn inspect_device(physical_device: &vk_raii::PhysicalDevice) {
-    let properties = physical_device.properties();
-    let mem_properties = physical_device.memory_properties();
+    let (properties, mem_properties) = unsafe {
+        (
+            physical_device.properties(),
+            physical_device.memory_properties(),
+        )
+    };
 
     // `device_name_as_c_str` faz o mesmo que o `CStr::from_ptr` de antes, só que
     // procurando o terminador dentro do array — sem `unsafe`, e sem ler fora do
@@ -195,8 +230,7 @@ fn inspect_device(physical_device: &vk_raii::PhysicalDevice) {
 }
 
 fn is_device_suitable(device: &vk_raii::PhysicalDevice) -> bool {
-    let properties = device.properties();
-    let features = device.features();
+    let (properties, features) = unsafe { (device.properties(), device.features()) };
 
     if properties.api_version < API_VERSION_1_4 {
         return false;
@@ -211,9 +245,8 @@ fn is_device_suitable(device: &vk_raii::PhysicalDevice) -> bool {
 }
 
 fn pick_physical_device(vulkan: &vk_raii::Instance) -> Result<vk_raii::PhysicalDevice> {
-    let devices = vulkan
-        .enumerate_physical_devices()
-        .context("enumerar os physical devices")?;
+    let devices =
+        unsafe { vulkan.enumerate_physical_devices() }.context("enumerar os physical devices")?;
     if devices.is_empty() {
         return Err(Error::unsupported("nenhuma GPU com suporte a Vulkan"));
     }
@@ -232,7 +265,7 @@ fn find_graphics_queue_family(
     surface: &vk_raii::Surface,
     device: &vk_raii::PhysicalDevice,
 ) -> Result<u32> {
-    let family_properties = device.queue_family_properties();
+    let family_properties = unsafe { device.queue_family_properties() };
 
     for (i, properties) in family_properties.iter().enumerate() {
         let i = i as u32;
@@ -240,8 +273,9 @@ fn find_graphics_queue_family(
             continue;
         }
 
-        let present_supported = device
-            .surface_support(surface, i)
+        // Surface e physical device saem da mesma instance, criada no
+        // `Engine::new`.
+        let present_supported = unsafe { device.surface_support(surface, i) }
             .context("consultar o suporte da surface para a queue family")?;
 
         if present_supported {
@@ -285,7 +319,5 @@ fn create_logical_device(
         .enabled_extension_names(&extension_names)
         .push_next(&mut features);
 
-    physical_device
-        .create_device(&device_info)
-        .context("criar device")
+    unsafe { physical_device.create_device(&device_info) }.context("criar device")
 }

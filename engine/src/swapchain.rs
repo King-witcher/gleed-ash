@@ -5,9 +5,8 @@
 //! borrow checker (a mesma `Swapchain` precisa ser `&mut` depois, no present).
 //! Como handles Vulkan são só inteiros opacos, `SwapchainImage` aqui é `Copy` e
 //! sai por valor. Quem continua dono de verdade das ImageViews e dos semáforos
-//! é a `Swapchain`, que os destrói no recreate e no `Drop`.
+//! é a `Swapchain`.
 
-use ash::khr;
 use ash::vk;
 
 use crate::device::Device;
@@ -24,11 +23,11 @@ pub struct SwapchainImage {
     pub render_finished: vk::Semaphore,
 }
 
-/// O que a `Swapchain` de fato possui por imagem. O semáforo é RAII (carrega um
-/// clone do device); a image view ainda é destruída à mão.
+/// O que a `Swapchain` de fato possui por imagem. A imagem em si é da swapchain
+/// e some com ela; a view e o semáforo se destroem sozinhos.
 struct ImageResources {
     image: vk::Image,
-    image_view: vk::ImageView,
+    image_view: vk_raii::ImageView,
     render_finished: vk_raii::Semaphore,
 }
 
@@ -37,54 +36,53 @@ impl ImageResources {
         SwapchainImage {
             index,
             image: self.image,
-            image_view: self.image_view,
+            image_view: self.image_view.handle(),
             render_finished: self.render_finished.handle(),
         }
     }
 }
 
 pub struct Swapchain {
-    device: Device,
-    loader: khr::swapchain::Device,
-    present_queue: vk_raii::Queue,
-    /// Destruída depois da swapchain: o `Drop` abaixo roda antes dos campos.
+    // A ORDEM DOS CAMPOS É A ORDEM DE DESTRUIÇÃO. As image views vêm das
+    // imagens da swapchain, então morrem antes dela; e a swapchain antes da
+    // surface. O `vk_raii` garante que nada disso passa do device, mas a ordem
+    // entre irmãos continua sendo daqui.
+    images: Vec<ImageResources>,
+    swapchain: vk_raii::Swapchain,
     surface: vk_raii::Surface,
+    present_queue: vk_raii::Queue,
+    device: Device,
     image_format: vk::Format,
     extent: vk::Extent2D,
-    handle: vk::SwapchainKHR,
-    images: Vec<ImageResources>,
     needs_recreate: bool,
 }
 
 impl Swapchain {
     pub fn new(device: Device, surface: vk_raii::Surface) -> Result<Self> {
-        let loader = khr::swapchain::Device::new(device.vulkan().raw(), device.raw());
         let present_queue = device.get_queue(device.present_index());
+        let (swapchain, image_format, extent) =
+            create_swapchain(&device, &surface, vk::SwapchainKHR::null())?;
+        let images = create_images(&device, &swapchain, image_format)?;
 
-        let mut swapchain = Self {
-            device,
-            loader,
-            present_queue,
+        Ok(Self {
+            images,
+            swapchain,
             surface,
-            image_format: vk::Format::UNDEFINED,
-            extent: vk::Extent2D::default(),
-            handle: vk::SwapchainKHR::null(),
-            images: Vec::new(),
+            present_queue,
+            device,
+            image_format,
+            extent,
             needs_recreate: false,
-        };
-        swapchain.recreate()?;
-        Ok(swapchain)
+        })
     }
 
     pub fn acquire_next_image(&mut self, image_available: vk::Semaphore) -> Result<SwapchainImage> {
         loop {
+            // O semáforo é do frame in flight que o renderer acabou de esperar,
+            // então não há nenhum acquire pendente nele.
             let result = unsafe {
-                self.loader.acquire_next_image(
-                    self.handle,
-                    u64::MAX,
-                    image_available,
-                    vk::Fence::null(),
-                )
+                self.swapchain
+                    .acquire_next_image(u64::MAX, image_available, vk::Fence::null())
             };
 
             match result {
@@ -111,7 +109,7 @@ impl Swapchain {
 
     pub fn present(&mut self, image: SwapchainImage) -> Result<()> {
         let wait_semaphores = [image.render_finished];
-        let swapchains = [self.handle];
+        let swapchains = [self.swapchain.handle()];
         let image_indices = [image.index];
 
         let present_info = vk::PresentInfoKHR::default()
@@ -119,9 +117,10 @@ impl Swapchain {
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 
+        // A queue só é usada aqui e no submit do frame, ambos na mesma thread.
         let result = unsafe {
-            self.loader
-                .queue_present(self.present_queue.handle(), &present_info)
+            self.swapchain
+                .queue_present(&self.present_queue, &present_info)
         };
 
         match result {
@@ -155,59 +154,83 @@ impl Swapchain {
         self.extent
     }
 
-    /// Cria ou recria a swapchain.
     fn recreate(&mut self) -> Result<()> {
         self.device.wait_idle()?;
 
-        let support = self.device.query_surface_support(&self.surface)?;
-        let format = choose_swap_surface_format(&support.formats);
-        let present_mode = choose_swap_present_mode(&support.present_modes);
-        self.extent = choose_swap_extent(&support.capabilities)?;
-        self.image_format = format.format;
-        let min_image_count = choose_swap_image_count(&support.capabilities);
+        let (swapchain, image_format, extent) =
+            create_swapchain(&self.device, &self.surface, self.swapchain.handle())?;
 
-        let create_info = vk::SwapchainCreateInfoKHR::default()
-            .old_swapchain(self.handle)
-            .surface(self.surface.handle())
-            .min_image_count(min_image_count)
-            .image_format(self.image_format)
-            .image_color_space(format.color_space)
-            .image_extent(self.extent)
-            // 1 porque não estamos fazendo 3D estereoscópico
-            .image_array_layers(1)
-            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .pre_transform(support.capabilities.current_transform)
-            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(present_mode)
-            // Corta pixels obscurecidos por outras janelas. Pode bugar efeitos
-            // de blur, porém.
-            .clipped(true);
-
-        let new_handle = unsafe { self.loader.create_swapchain(&create_info, None) }
-            .context("criar swapchain")?;
-
-        // Só depois de criar a nova é que a antiga (passada como old_swapchain)
-        // pode ser destruída.
-        self.destroy_images();
-        if self.handle != vk::SwapchainKHR::null() {
-            unsafe { self.loader.destroy_swapchain(self.handle, None) };
-        }
-        self.handle = new_handle;
-
-        let images = unsafe { self.loader.get_swapchain_images(self.handle) }
-            .context("obter as imagens da swapchain")?;
-        self.create_images(&images)
-    }
-
-    fn create_images(&mut self, images: &[vk::Image]) -> Result<()> {
+        // Só depois de criar a nova é que as views da antiga podem morrer, e só
+        // depois delas é que a antiga em si pode ser destruída — que é o que a
+        // atribuição abaixo faz.
         self.images.clear();
+        self.swapchain = swapchain;
+        self.image_format = image_format;
+        self.extent = extent;
+        self.images = create_images(&self.device, &self.swapchain, image_format)?;
 
-        for &image in images {
+        Ok(())
+    }
+}
+
+impl Drop for Swapchain {
+    fn drop(&mut self) {
+        // Não há como propagar de um Drop: se o wait falhou, destrói do mesmo jeito.
+        self.device.wait_idle().ok();
+    }
+}
+
+fn create_swapchain(
+    device: &Device,
+    surface: &vk_raii::Surface,
+    old: vk::SwapchainKHR,
+) -> Result<(vk_raii::Swapchain, vk::Format, vk::Extent2D)> {
+    let support = device.query_surface_support(surface)?;
+    let format = choose_swap_surface_format(&support.formats);
+    let present_mode = choose_swap_present_mode(&support.present_modes);
+    let extent = choose_swap_extent(&support.capabilities)?;
+    let min_image_count = choose_swap_image_count(&support.capabilities);
+
+    let create_info = vk::SwapchainCreateInfoKHR::default()
+        .old_swapchain(old)
+        .surface(surface.handle())
+        .min_image_count(min_image_count)
+        .image_format(format.format)
+        .image_color_space(format.color_space)
+        .image_extent(extent)
+        // 1 porque não estamos fazendo 3D estereoscópico
+        .image_array_layers(1)
+        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .pre_transform(support.capabilities.current_transform)
+        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+        .present_mode(present_mode)
+        // Corta pixels obscurecidos por outras janelas. Pode bugar efeitos
+        // de blur, porém.
+        .clipped(true);
+
+    // A extensão está em REQUIRED_EXTENSIONS e a surface veio da mesma instance
+    // do device; `old` ou é nula ou é a swapchain que estamos substituindo.
+    let swapchain =
+        unsafe { device.vk().create_swapchain(&create_info) }.context("criar swapchain")?;
+
+    Ok((swapchain, format.format, extent))
+}
+
+fn create_images(
+    device: &Device,
+    swapchain: &vk_raii::Swapchain,
+    format: vk::Format,
+) -> Result<Vec<ImageResources>> {
+    let images = unsafe { swapchain.images() }.context("obter as imagens da swapchain")?;
+
+    images
+        .into_iter()
+        .map(|image| {
             let view_info = vk::ImageViewCreateInfo::default()
                 .image(image)
                 .view_type(vk::ImageViewType::TYPE_2D)
-                .format(self.image_format)
+                .format(format)
                 .components(vk::ComponentMapping {
                     r: vk::ComponentSwizzle::IDENTITY,
                     g: vk::ComponentSwizzle::IDENTITY,
@@ -222,37 +245,16 @@ impl Swapchain {
                     layer_count: 1,
                 });
 
-            let image_view = unsafe { self.device.raw().create_image_view(&view_info, None) }
-                .context("criar image view")?;
+            let image_view =
+                unsafe { device.vk().create_image_view(&view_info) }.context("criar image view")?;
 
-            self.images.push(ImageResources {
+            Ok(ImageResources {
                 image,
                 image_view,
-                render_finished: self.device.create_semaphore()?,
-            });
-        }
-
-        Ok(())
-    }
-
-    fn destroy_images(&mut self) {
-        let raw = self.device.raw();
-        // O semáforo de cada imagem se destrói sozinho ao sair do vetor.
-        for image in self.images.drain(..) {
-            unsafe { raw.destroy_image_view(image.image_view, None) };
-        }
-    }
-}
-
-impl Drop for Swapchain {
-    fn drop(&mut self) {
-        // Não há como propagar de um Drop: se o wait falhou, destrói do mesmo jeito.
-        self.device.wait_idle().ok();
-        self.destroy_images();
-        if self.handle != vk::SwapchainKHR::null() {
-            unsafe { self.loader.destroy_swapchain(self.handle, None) };
-        }
-    }
+                render_finished: device.create_semaphore()?,
+            })
+        })
+        .collect()
 }
 
 fn choose_swap_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
