@@ -65,32 +65,7 @@ impl Engine {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let square_vertices = [
-            Vertex {
-                position: Vec3::new(-0.5, -0.5, 0.0),
-                color: Vec3::new(0.2, 0.0, 0.0),
-            },
-            Vertex {
-                position: Vec3::new(0.5, -0.5, 0.0),
-                color: Vec3::new(0.2, 0.0, 0.0),
-            },
-            Vertex {
-                position: Vec3::new(0.5, 0.5, 0.0),
-                color: Vec3::new(0.4, 0.0, 0.0),
-            },
-            Vertex {
-                position: Vec3::new(-0.5, 0.5, 0.0),
-                color: Vec3::new(0.4, 0.0, 0.0),
-            },
-        ];
-
-        let square_indices: [u32; 6] = [0, 1, 2, 2, 3, 0];
-
-        let meshes = vec![Mesh::new(
-            &mut self.transfer,
-            &square_vertices,
-            &square_indices,
-        )?];
+        let meshes = vec![make_cube(&mut self.transfer)?];
 
         loop {
             self.draw(&meshes)?;
@@ -130,6 +105,70 @@ impl Drop for Engine {
         // `.ok()` para não entrar em pânico dentro de um Drop.
         self.device.wait_idle().ok();
     }
+}
+
+/// Unit cube, one flat color per face.
+///
+/// Each face gets its own four vertices because the color is per-vertex and the
+/// six faces meeting at a corner disagree on it. Winding is CCW seen from
+/// outside, matching the pipeline's front face.
+///
+/// There is no depth buffer yet: this renders correctly only because the cube is
+/// convex and back faces are culled, so no two visible faces ever overlap.
+fn make_cube(transfer: &mut TransferContext) -> Result<Mesh> {
+    const H: f32 = 0.5;
+
+    // (four corners in CCW order seen from outside, face color)
+    let faces = [
+        // +X
+        (
+            [[H, -H, H], [H, -H, -H], [H, H, -H], [H, H, H]],
+            [0.8, 0.2, 0.2],
+        ),
+        // -X
+        (
+            [[-H, -H, -H], [-H, -H, H], [-H, H, H], [-H, H, -H]],
+            [0.4, 0.1, 0.1],
+        ),
+        // +Y
+        (
+            [[-H, H, H], [H, H, H], [H, H, -H], [-H, H, -H]],
+            [0.2, 0.8, 0.2],
+        ),
+        // -Y
+        (
+            [[-H, -H, -H], [H, -H, -H], [H, -H, H], [-H, -H, H]],
+            [0.1, 0.4, 0.1],
+        ),
+        // +Z
+        (
+            [[-H, -H, H], [H, -H, H], [H, H, H], [-H, H, H]],
+            [0.2, 0.2, 0.8],
+        ),
+        // -Z
+        (
+            [[H, -H, -H], [-H, -H, -H], [-H, H, -H], [H, H, -H]],
+            [0.1, 0.1, 0.4],
+        ),
+    ];
+
+    let mut vertices = Vec::with_capacity(faces.len() * 4);
+    let mut indices = Vec::with_capacity(faces.len() * 6);
+
+    for (corners, color) in faces {
+        let base = vertices.len() as u32;
+
+        for corner in corners {
+            vertices.push(Vertex {
+                position: Vec3::from_array(corner),
+                color: Vec3::from_array(color),
+            });
+        }
+
+        indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+    }
+
+    Mesh::new(transfer, &vertices, &indices)
 }
 
 fn create_instance(window: &Window) -> Result<vk::raii::Instance> {
