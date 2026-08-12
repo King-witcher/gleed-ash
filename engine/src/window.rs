@@ -27,10 +27,10 @@ pub struct Window {
 
 impl Window {
     pub fn new(title: &str) -> Result<Self> {
-        let sdl = sdl3::init().context("inicializar a SDL3")?;
+        let sdl = sdl3::init().context("initialize SDL3")?;
         let video = sdl
             .video()
-            .context("inicializar o subsistema de vídeo da SDL")?;
+            .context("initialize the SDL video subsystem")?;
 
         // set_flags() sobrescreve os flags acumulados, então vem primeiro;
         // vulkan()/resizable() depois só acrescentam. Mesma combinação do C++:
@@ -41,7 +41,7 @@ impl Window {
             .vulkan()
             .resizable()
             .build()
-            .context("criar a janela")?;
+            .context("create the window")?;
 
         Ok(Self {
             window,
@@ -61,7 +61,7 @@ impl Window {
     pub unsafe fn vulkan_surface(&self, instance: vk::Instance) -> Result<vk::SurfaceKHR> {
         self.window
             .vulkan_create_surface(instance)
-            .context("criar a surface Vulkan")
+            .context("create the Vulkan surface")
     }
 
     /// Extensões de instância que a SDL exige para conseguir criar a surface.
@@ -71,7 +71,7 @@ impl Window {
         let names = self
             .window
             .vulkan_instance_extensions()
-            .context("consultar as extensões de instância Vulkan exigidas")?;
+            .context("query the required Vulkan instance extensions")?;
 
         // Um nome com NUL no meio seria bug da SDL, não condição de ambiente.
         Ok(names

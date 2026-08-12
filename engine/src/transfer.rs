@@ -21,7 +21,7 @@ impl TransferContext {
         let queue = device.get_queue(device.graphics_index());
         let pool = make_command_pool(&device)?;
         let command_buffer = unsafe { pool.allocate_one(vk::CommandBufferLevel::PRIMARY) }
-            .context("alocar transfer command buffer")?;
+            .context("allocate transfer command buffer")?;
         // Não sinalizada: a primeira espera precisa realmente esperar a GPU. Se
         // começasse sinalizada, ela retornaria antes da cópia terminar.
         let fence = device.create_fence(false)?;
@@ -47,16 +47,16 @@ impl TransferContext {
         // A espera da fence no fim da chamada anterior já garantiu que a GPU
         // terminou com este buffer, e o `&mut self` que nada mais está gravando.
         unsafe { self.pool.reset(vk::CommandPoolResetFlags::empty()) }
-            .context("resetar o transfer command pool")?;
+            .context("reset the transfer command pool")?;
 
         let begin_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe { self.command_buffer.begin(&begin_info) }
-            .context("iniciar transfer command buffer")?;
+            .context("begin transfer command buffer")?;
 
         record(&mut self.command_buffer);
 
-        unsafe { self.command_buffer.end() }.context("finalizar transfer command buffer")?;
+        unsafe { self.command_buffer.end() }.context("end transfer command buffer")?;
 
         let cmd_infos =
             [vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffer.handle())];
@@ -65,11 +65,11 @@ impl TransferContext {
         // A fence está livre: a chamada anterior esperou e resetou ela, e o
         // buffer acabou de sair do `end`.
         unsafe { self.queue.submit2(&[submit_info], self.fence.handle()) }
-            .context("submeter transfer command buffer")?;
+            .context("submit transfer command buffer")?;
 
         // Bloqueia até a GPU terminar e deixa a fence pronta para o próximo uso.
-        unsafe { self.fence.wait(u64::MAX) }.context("esperar a transferência terminar")?;
-        unsafe { self.fence.reset() }.context("resetar a fence de transferência")
+        unsafe { self.fence.wait(u64::MAX) }.context("wait for the transfer to finish")?;
+        unsafe { self.fence.reset() }.context("reset the transfer fence")
     }
 
     /// Aloca um buffer device-local (VRAM) e sobe `data` para ele via staging.

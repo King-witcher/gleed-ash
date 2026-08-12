@@ -40,7 +40,7 @@ pub struct Input {
 impl Input {
     pub fn new(sdl: &sdl3::Sdl) -> Result<Self> {
         Ok(Self {
-            event_pump: sdl.event_pump().context("criar o event pump da SDL")?,
+            event_pump: sdl.event_pump().context("create the SDL event pump")?,
             keys_down: HashSet::new(),
             keys_pressed: HashSet::new(),
             mouse_buttons_down: HashSet::new(),

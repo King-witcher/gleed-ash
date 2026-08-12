@@ -127,7 +127,7 @@ impl Frame<'_> {
         unsafe {
             command_buffer.end_rendering();
             transition_presentation(command_buffer, swapchain_image.image);
-            command_buffer.end().context("finalizar o command buffer")?;
+            command_buffer.end().context("end the command buffer")?;
         }
 
         // Trava a escrita na imagem até o acquire_next_image sinalizar. Estágios
@@ -153,7 +153,7 @@ impl Frame<'_> {
         // A fence foi esperada e resetada no begin_frame deste mesmo frame in
         // flight, e o `Frame` por valor garante que este é o único submit dele.
         unsafe { queue.submit2(&[submit_info], fence.handle()) }
-            .context("submeter para a graphics queue")?;
+            .context("submit to the graphics queue")?;
 
         swapchain.present(swapchain_image)
     }

@@ -100,7 +100,7 @@ impl Swapchain {
                     // semáforo depois de recriar.
                     self.recreate()?;
                 }
-                Err(error) => return Err(error).context("adquirir a próxima imagem da swapchain"),
+                Err(error) => return Err(error).context("acquire the next swapchain image"),
             }
         }
     }
@@ -127,7 +127,7 @@ impl Swapchain {
             // adiada para o próximo frame boundary, onde não existe nenhuma
             // referência por-frame para dentro da swapchain.
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.needs_recreate = true,
-            Err(error) => return Err(error).context("apresentar a imagem da swapchain"),
+            Err(error) => return Err(error).context("present the swapchain image"),
         }
 
         Ok(())
@@ -210,7 +210,7 @@ fn create_swapchain(
     // A extensão está em REQUIRED_EXTENSIONS e a surface veio da mesma instance
     // do device; `old` ou é nula ou é a swapchain que estamos substituindo.
     let swapchain =
-        unsafe { device.vk().create_swapchain(&create_info) }.context("criar swapchain")?;
+        unsafe { device.vk().create_swapchain(&create_info) }.context("create swapchain")?;
 
     Ok((swapchain, format.format, extent))
 }
@@ -220,7 +220,7 @@ fn create_images(
     swapchain: &vk::raii::Swapchain,
     format: vk::Format,
 ) -> Result<Vec<ImageResources>> {
-    let images = unsafe { swapchain.images() }.context("obter as imagens da swapchain")?;
+    let images = unsafe { swapchain.images() }.context("get the swapchain images")?;
 
     images
         .into_iter()
@@ -244,7 +244,7 @@ fn create_images(
                 });
 
             let image_view =
-                unsafe { device.vk().create_image_view(&view_info) }.context("criar image view")?;
+                unsafe { device.vk().create_image_view(&view_info) }.context("create image view")?;
 
             Ok(ImageResources {
                 image,
@@ -280,7 +280,7 @@ fn choose_swap_extent(capabilities: &vk::SurfaceCapabilitiesKHR) -> Result<vk::E
     // determinado pela extent da swapchain. Não suportamos surface dinâmica por
     // ora, então descartamos esse cenário.
     if (capabilities.current_extent.width | capabilities.current_extent.height) == u32::MAX {
-        return Err(Error::unsupported("extent de surface dinâmica"));
+        return Err(Error::unsupported("dynamic surface extent"));
     }
     Ok(capabilities.current_extent)
 }

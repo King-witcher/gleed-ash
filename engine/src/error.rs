@@ -52,10 +52,10 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Vulkan { op, result } => write!(f, "falha ao {op}: {result}"),
-            Error::Allocation { op, source } => write!(f, "falha ao {op}: {source}"),
-            Error::Sdl { op, message } => write!(f, "falha ao {op}: {message}"),
-            Error::Unsupported(what) => write!(f, "não suportado: {what}"),
+            Error::Vulkan { op, result } => write!(f, "failed to {op}: {result}"),
+            Error::Allocation { op, source } => write!(f, "failed to {op}: {source}"),
+            Error::Sdl { op, message } => write!(f, "failed to {op}: {message}"),
+            Error::Unsupported(what) => write!(f, "unsupported: {what}"),
         }
     }
 }

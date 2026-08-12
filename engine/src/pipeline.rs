@@ -74,7 +74,7 @@ fn make_descriptor_set_layout(device: &Device) -> Result<vk::raii::DescriptorSet
     let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe { device.vk().create_descriptor_set_layout(&info) }
-        .context("criar descriptor set layout")
+        .context("create descriptor set layout")
 }
 
 fn make_pipeline_layout(
@@ -85,7 +85,7 @@ fn make_pipeline_layout(
     let set_layouts = [descriptor_set_layout.handle()];
     let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
 
-    unsafe { device.vk().create_pipeline_layout(&info) }.context("criar pipeline layout")
+    unsafe { device.vk().create_pipeline_layout(&info) }.context("create pipeline layout")
 }
 
 fn make_pipeline(
@@ -180,7 +180,7 @@ fn make_pipeline(
 
     let mut pipelines = created
         .map_err(|(_, result)| result)
-        .context("criar a graphics pipeline")?;
+        .context("create the graphics pipeline")?;
 
     Ok(pipelines.remove(0))
 }

@@ -45,7 +45,7 @@ pub struct Buffer {
     /// Handle refcontado: o `vkDestroyBuffer` do `Drop` abaixo nunca roda
     /// depois do `vkDestroyDevice`.
     device: Device,
-    allocator: Rc<RefCell<GpuAllocator>>,
+    allocator: Allocator,
     // Option só para poder devolver a Allocation ao allocator no Drop.
     allocation: Option<Allocation>,
     buffer: vk::Buffer,
@@ -79,20 +79,23 @@ impl Buffer {
 impl Drop for Buffer {
     fn drop(&mut self) {
         if let Some(allocation) = self.allocation.take() {
-            let _ = self.allocator.borrow_mut().free(allocation);
+            let _ = self.allocator.free(allocation);
         }
         unsafe { self.device.raw().destroy_buffer(self.buffer, None) };
     }
 }
 
-pub struct Allocator {
+struct AllocatorInner {
     device: Device,
-    inner: Rc<RefCell<GpuAllocator>>,
+    gpu_allocator: GpuAllocator,
 }
+
+#[derive(Clone)]
+pub struct Allocator(Rc<RefCell<AllocatorInner>>);
 
 impl Allocator {
     pub fn new(device: Device) -> Result<Self> {
-        let inner = GpuAllocator::new(&AllocatorCreateDesc {
+        let gpu_allocator = GpuAllocator::new(&AllocatorCreateDesc {
             instance: device.vulkan_raw().clone(),
             device: device.raw().clone(),
             physical_device: device.physical_device_handle(),
@@ -100,18 +103,18 @@ impl Allocator {
             buffer_device_address: false,
             allocation_sizes: Default::default(),
         })
-        .context("criar o allocator de GPU")?;
+        .context("create gpu allocator")?;
 
-        Ok(Self {
+        Ok(Self(Rc::new(RefCell::new(AllocatorInner {
             device,
-            inner: Rc::new(RefCell::new(inner)),
-        })
+            gpu_allocator,
+        }))))
     }
 
     pub fn allocate(&self, buffer_info: &vk::BufferCreateInfo, mode: AllocMode) -> Result<Buffer> {
-        let raw = self.device.raw();
+        let raw = self.0.borrow().device.raw().clone();
 
-        let buffer = unsafe { raw.create_buffer(buffer_info, None) }.context("criar buffer")?;
+        let buffer = unsafe { raw.create_buffer(buffer_info, None) }.context("create buffer")?;
         let requirements = unsafe { raw.get_buffer_memory_requirements(buffer) };
 
         // HostVisible: memória mapeável para a CPU escrever (staging/uniforms).
@@ -122,8 +125,9 @@ impl Allocator {
         };
 
         let allocation = self
-            .inner
+            .0
             .borrow_mut()
+            .gpu_allocator
             .allocate(&AllocationCreateDesc {
                 name: "buffer",
                 requirements,
@@ -133,21 +137,28 @@ impl Allocator {
             })
             // O `vk::Buffer` acima já existe: sem desfazê-lo aqui, ele vazaria.
             .inspect_err(|_| unsafe { raw.destroy_buffer(buffer, None) })
-            .context("alocar memória do buffer")?;
+            .context("allocate buffer memory")?;
 
         // Montar o `Buffer` antes do bind é de propósito: se o bind falhar, é o
         // `Drop` dele que devolve a alocação e destrói o `vk::Buffer`.
         let (memory, offset) = (unsafe { allocation.memory() }, allocation.offset());
         let allocated = Buffer {
-            device: self.device.clone(),
-            allocator: Rc::clone(&self.inner),
+            device: self.0.borrow().device.clone(),
+            allocator: self.clone(),
             allocation: Some(allocation),
             buffer,
         };
 
-        unsafe { raw.bind_buffer_memory(buffer, memory, offset) }
-            .context("fazer bind da memória do buffer")?;
+        unsafe { raw.bind_buffer_memory(buffer, memory, offset) }.context("bind buffer memory")?;
 
         Ok(allocated)
+    }
+
+    fn free(&self, allocation: Allocation) {
+        self.0
+            .borrow_mut()
+            .gpu_allocator
+            .free(allocation)
+            .expect("failed to free memory")
     }
 }

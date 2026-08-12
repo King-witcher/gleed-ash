@@ -101,8 +101,8 @@ impl Renderer {
             frame
                 .fence
                 .wait(u64::MAX)
-                .context("esperar a fence do frame")?;
-            frame.fence.reset().context("resetar a fence do frame")?;
+                .context("wait for the frame fence")?;
+            frame.fence.reset().context("reset the frame fence")?;
         }
 
         let swapchain_image = swapchain.acquire_next_image(frame.image_available.handle())?;
@@ -116,11 +116,11 @@ impl Renderer {
             frame
                 .command_pool
                 .reset(vk::CommandPoolResetFlags::empty())
-                .context("resetar o command pool do frame")?;
+                .context("reset the frame command pool")?;
 
             command_buffer
                 .begin(&vk::CommandBufferBeginInfo::default())
-                .context("iniciar o command buffer")?;
+                .context("begin the command buffer")?;
 
             transition_rendering(command_buffer, swapchain_image.image);
             begin_rendering(command_buffer, &swapchain_image, extent);

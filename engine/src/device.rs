@@ -78,13 +78,13 @@ impl Device {
         unsafe {
             let capabilities = physical_device
                 .surface_capabilities(surface)
-                .context("obter as surface capabilities do physical device")?;
+                .context("get the physical device's surface capabilities")?;
             let formats = physical_device
                 .surface_formats(surface)
-                .context("obter os surface formats do physical device")?;
+                .context("get the physical device's surface formats")?;
             let present_modes = physical_device
                 .surface_present_modes(surface)
-                .context("obter os surface present modes do physical device")?;
+                .context("get the physical device's surface present modes")?;
 
             Ok(SurfaceSupport {
                 capabilities,
@@ -98,7 +98,7 @@ impl Device {
         &self,
         create_info: &vk::CommandPoolCreateInfo,
     ) -> Result<vk::raii::CommandPool> {
-        unsafe { self.device.create_command_pool(create_info) }.context("criar command pool")
+        unsafe { self.device.create_command_pool(create_info) }.context("create command pool")
     }
 
     pub fn create_semaphore(&self) -> Result<vk::raii::Semaphore> {
@@ -106,7 +106,7 @@ impl Device {
             self.device
                 .create_semaphore(&vk::SemaphoreCreateInfo::default())
         }
-        .context("criar semáforo")
+        .context("create semaphore")
     }
 
     pub fn create_fence(&self, signaled: bool) -> Result<vk::raii::Fence> {
@@ -120,7 +120,7 @@ impl Device {
             self.device
                 .create_fence(&vk::FenceCreateInfo::default().flags(flags))
         }
-        .context("criar fence")
+        .context("create fence")
     }
 
     pub fn create_shader_module(&self, code: &[u32]) -> Result<vk::raii::ShaderModule> {
@@ -128,7 +128,7 @@ impl Device {
             self.device
                 .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(code))
         }
-        .context("criar shader module")
+        .context("create shader module")
     }
 
     pub fn graphics_index(&self) -> u32 {
@@ -181,7 +181,7 @@ impl Device {
     }
 
     pub fn wait_idle(&self) -> Result<()> {
-        unsafe { self.device.device_wait_idle() }.context("esperar o device ficar idle")
+        unsafe { self.device.device_wait_idle() }.context("wait for the device to become idle")
     }
 }
 
@@ -244,9 +244,9 @@ fn is_device_suitable(device: &vk::raii::PhysicalDevice) -> bool {
 
 fn pick_physical_device(vulkan: &vk::raii::Instance) -> Result<vk::raii::PhysicalDevice> {
     let devices =
-        unsafe { vulkan.enumerate_physical_devices() }.context("enumerar os physical devices")?;
+        unsafe { vulkan.enumerate_physical_devices() }.context("enumerate the physical devices")?;
     if devices.is_empty() {
-        return Err(Error::unsupported("nenhuma GPU com suporte a Vulkan"));
+        return Err(Error::unsupported("no GPU with Vulkan support"));
     }
 
     let found = devices.len();
@@ -254,7 +254,7 @@ fn pick_physical_device(vulkan: &vk::raii::Instance) -> Result<vk::raii::Physica
     // TODO: Pick the most suitable device
     devices.into_iter().find(is_device_suitable).ok_or_else(|| {
         Error::unsupported(format!(
-            "nenhuma das {found} GPUs é discreta com Vulkan 1.4 e geometry shader"
+            "none of the {found} GPUs is discrete with Vulkan 1.4 and a geometry shader"
         ))
     })
 }
@@ -274,7 +274,7 @@ fn find_graphics_queue_family(
         // Surface e physical device saem da mesma instance, criada no
         // `Engine::new`.
         let present_supported = unsafe { device.surface_support(surface, i) }
-            .context("consultar o suporte da surface para a queue family")?;
+            .context("query the surface support for the queue family")?;
 
         if present_supported {
             return Ok(i);
@@ -282,7 +282,7 @@ fn find_graphics_queue_family(
     }
 
     Err(Error::unsupported(
-        "nenhuma queue family suporta gráficos e apresentação para esta surface",
+        "no queue family supports both graphics and presentation for this surface",
     ))
 }
 
@@ -317,5 +317,5 @@ fn create_logical_device(
         .enabled_extension_names(&extension_names)
         .push_next(&mut features);
 
-    unsafe { physical_device.create_device(&device_info) }.context("criar device")
+    unsafe { physical_device.create_device(&device_info) }.context("create device")
 }

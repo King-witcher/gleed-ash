@@ -26,7 +26,7 @@ impl FrameInFlight {
         let ubo = make_ubo(allocator)?;
         let command_pool = make_command_pool(device)?;
         let command_buffer = unsafe { command_pool.allocate_one(vk::CommandBufferLevel::PRIMARY) }
-            .context("alocar command buffer")?;
+            .context("allocate command buffer")?;
         let descriptor_set = make_descriptor_set(device, descriptor_pool, layout)?;
 
         // Aponta o descriptor set deste frame para o seu próprio UBO. O buffer é
@@ -76,7 +76,7 @@ pub(super) fn make_descriptor_pool(device: &Device) -> Result<vk::raii::Descript
         .pool_sizes(&pool_sizes)
         .max_sets(MAX_FRAMES_IN_FLIGHT as u32);
 
-    unsafe { device.vk().create_descriptor_pool(&info) }.context("criar descriptor pool")
+    unsafe { device.vk().create_descriptor_pool(&info) }.context("create descriptor pool")
 }
 
 fn make_ubo(allocator: &Allocator) -> Result<Buffer> {
@@ -101,7 +101,7 @@ fn make_descriptor_set(
 
     // O pool é usado só daqui, na construção dos frames in flight.
     let sets =
-        unsafe { device.raw().allocate_descriptor_sets(&info) }.context("alocar descriptor set")?;
+        unsafe { device.raw().allocate_descriptor_sets(&info) }.context("allocate descriptor set")?;
 
     Ok(sets[0])
 }
