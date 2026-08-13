@@ -1,25 +1,26 @@
-//! Equivalente a modules/engine/src/device.{h,cc}.
+//! Equivalent to modules/engine/src/device.{h,cc}.
 //!
-//! Diferença central em relação ao C++: o `vulkan_raii.hpp` destruía tudo
-//! sozinho. As bindings cruas são 1:1 com a API C — não há RAII. Quem cobre
-//! esse papel é o módulo `vk::raii`, um wrapper fino: ele garante a ordem de
-//! destruição e nada além disso, então as chamadas continuam `unsafe` e é aqui
-//! que o engine assume o contrato delas.
+//! Core difference from C++: `vulkan_raii.hpp` destroyed everything on its
+//! own. The raw bindings are 1:1 with the C API — there is no RAII. That role
+//! falls to the `vk::raii` module, a thin wrapper: it guarantees destruction
+//! order and nothing else, so the calls stay `unsafe` and this is where the
+//! engine takes on their contracts.
 //!
-//! O `vk::raii::Device` é um handle clonável com o refcount por dentro, e cada
-//! objeto criado a partir dele (semáforo, fence, shader module, queue) carrega
-//! um clone. Assim o `vkDestroyDevice` só acontece quando o último desses
-//! objetos morre, sem depender de ordem manual de destruição como no C++.
+//! `vk::raii::Device` is a cloneable handle with the refcount inside, and
+//! every object created from it (semaphore, fence, shader module, queue)
+//! carries a clone. `vkDestroyDevice` therefore only happens once the last of
+//! those objects dies, with no manual destruction order as in C++.
 
 use std::ffi::CStr;
 
 use crate::prelude::*;
 
-/// O engine exige Vulkan 1.4. As bindings são geradas em cima dos headers 1.3,
-/// então a constante 1.4 não existe e montamos a versão na mão.
+/// The engine requires Vulkan 1.4. The bindings are generated from the 1.3
+/// headers, so the 1.4 constant does not exist and the version is built by
+/// hand.
 pub const API_VERSION_1_4: u32 = vk::make_api_version(0, 1, 4, 0);
 
-/// Mesma lista de REQUIRED_EXTENSIONS do device.cc.
+/// Same REQUIRED_EXTENSIONS list as device.cc.
 pub const REQUIRED_EXTENSIONS: [&CStr; 5] = [
     vk::KHR_SHADER_DRAW_PARAMETERS_NAME,
     vk::KHR_CREATE_RENDERPASS2_NAME,
@@ -34,8 +35,8 @@ pub struct SurfaceSupport {
     pub present_modes: Vec<vk::PresentModeKHR>,
 }
 
-/// Handle clonável para o device lógico: clonar custa um refcount do
-/// `vk::raii::Device` mais os dois índices de queue family.
+/// Cloneable handle to the logical device: a clone costs one refcount bump on
+/// the `vk::raii::Device` plus the two queue family indices.
 #[derive(Clone)]
 pub struct Device {
     device: vk::raii::Device,
@@ -45,8 +46,8 @@ pub struct Device {
 
 impl Device {
     pub fn new(vulkan: &vk::raii::Instance, surface: &vk::raii::Surface) -> Result<Self> {
-        // O `PhysicalDevice` já carrega a instance que o enumerou, então os
-        // helpers abaixo não precisam recebê-la de novo.
+        // The `PhysicalDevice` already carries the instance that enumerated
+        // it, so the helpers below do not need to receive it again.
         let physical_device = pick_physical_device(vulkan)?;
 
         if cfg!(debug_assertions) {
@@ -54,7 +55,7 @@ impl Device {
         }
 
         let graphics_index = find_graphics_queue_family(surface, &physical_device)?;
-        // Igual ao C++: a mesma família serve para gráficos e apresentação.
+        // Same as C++: one family serves both graphics and presentation.
         let present_index = graphics_index;
 
         let device = create_logical_device(&physical_device, graphics_index)?;
@@ -66,25 +67,26 @@ impl Device {
         })
     }
 
-    /// Informações de suporte da surface para o physical device.
+    /// Surface support information for the physical device.
     ///
-    /// As três consultas saem do `PhysicalDevice`, que usa o loader da própria
-    /// `Surface` — o `Device` não guarda mais um loader só para isso.
+    /// The three queries go through the `PhysicalDevice`, which uses the
+    /// `Surface`'s own loader — the `Device` no longer keeps a loader just for
+    /// this.
     pub fn query_surface_support(&self, surface: &vk::raii::Surface) -> Result<SurfaceSupport> {
         let physical_device = self.physical_device();
 
-        // A surface veio da mesma instance que enumerou este physical device:
-        // as duas saem do `Engine::new`.
+        // The surface came from the same instance that enumerated this
+        // physical device: both come out of `Engine::new`.
         unsafe {
             let capabilities = physical_device
                 .surface_capabilities(surface)
-                .context("get the physical device's surface capabilities")?;
+                .context("get the physical device surface capabilities")?;
             let formats = physical_device
                 .surface_formats(surface)
-                .context("get the physical device's surface formats")?;
+                .context("get the physical device surface formats")?;
             let present_modes = physical_device
                 .surface_present_modes(surface)
-                .context("get the physical device's surface present modes")?;
+                .context("get the physical device surface present modes")?;
 
             Ok(SurfaceSupport {
                 capabilities,
@@ -94,19 +96,12 @@ impl Device {
         }
     }
 
-    pub fn create_command_pool(
-        &self,
-        create_info: &vk::CommandPoolCreateInfo,
-    ) -> Result<vk::raii::CommandPool> {
-        unsafe { self.device.create_command_pool(create_info) }.context("create command pool")
-    }
-
     pub fn create_semaphore(&self) -> Result<vk::raii::Semaphore> {
         unsafe {
             self.device
                 .create_semaphore(&vk::SemaphoreCreateInfo::default())
         }
-        .context("create semaphore")
+        .context("create the semaphore")
     }
 
     pub fn create_fence(&self, signaled: bool) -> Result<vk::raii::Fence> {
@@ -120,15 +115,7 @@ impl Device {
             self.device
                 .create_fence(&vk::FenceCreateInfo::default().flags(flags))
         }
-        .context("create fence")
-    }
-
-    pub fn create_shader_module(&self, code: &[u32]) -> Result<vk::raii::ShaderModule> {
-        unsafe {
-            self.device
-                .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(code))
-        }
-        .context("create shader module")
+        .context("create the fence")
     }
 
     pub fn graphics_index(&self) -> u32 {
@@ -139,25 +126,26 @@ impl Device {
         self.present_index
     }
 
-    /// O handle RAII. É por ele que os módulos criam objetos que se destroem
-    /// sozinhos; as chamadas cruas chegam pelo `Deref` dele.
+    /// The RAII handle. Modules use it to create objects that destroy
+    /// themselves; the raw calls are reachable through its `Deref`.
     pub fn vk(&self) -> &vk::raii::Device {
         &self.device
     }
 
-    /// A tabela de dispatch, para as chamadas que não produzem um objeto RAII e
-    /// para as bibliotecas que falam Vulkan por conta própria.
+    /// The dispatch table, for calls that do not produce a RAII object and for
+    /// libraries that speak Vulkan on their own.
     pub fn raw(&self) -> &vk::raw::Device {
         &self.device
     }
 
-    /// A instance que criou este device. Quem precisa dela pega daqui em vez de
-    /// recebê-la de novo por fora.
+    /// The instance that created this device. Whoever needs it takes it from
+    /// here instead of receiving it again from outside.
     pub fn vulkan(&self) -> &vk::raii::Instance {
         self.device.instance()
     }
 
-    /// A instance com a tabela de dispatch — hoje só a `gpu-allocator` precisa.
+    /// The instance with its dispatch table — today only `gpu-allocator`
+    /// needs it.
     pub fn vulkan_raw(&self) -> &vk::raw::Instance {
         self.device.instance()
     }
@@ -166,17 +154,17 @@ impl Device {
         self.device.physical_device()
     }
 
-    /// O handle pelado, para as bibliotecas que falam Vulkan por conta própria
-    /// — hoje a `gpu-allocator`, no `Allocator::new`.
+    /// The bare handle, for libraries that speak Vulkan on their own — today
+    /// `gpu-allocator`, in `Allocator::new`.
     pub fn physical_device_handle(&self) -> vk::PhysicalDevice {
         self.physical_device().handle()
     }
 
-    /// A queue é dona do device por refcount: os `vkQueue*` saem da tabela de
-    /// dispatch dele.
-    pub fn get_queue(&self, family_index: u32) -> vk::raii::Queue {
-        // A família saiu do `VkDeviceCreateInfo` deste device e só pedimos uma
-        // queue nela.
+    /// The queue owns the device by refcount: the `vkQueue*` calls come from
+    /// its dispatch table.
+    pub fn queue(&self, family_index: u32) -> vk::raii::Queue {
+        // The family came out of this device's `VkDeviceCreateInfo`, and only
+        // one queue was requested for it.
         unsafe { self.device.queue(family_index, 0) }
     }
 
@@ -193,9 +181,9 @@ fn inspect_device(physical_device: &vk::raii::PhysicalDevice) {
         )
     };
 
-    // `device_name_as_c_str` faz o mesmo que o `CStr::from_ptr` de antes, só que
-    // procurando o terminador dentro do array — sem `unsafe`, e sem ler fora do
-    // limite se o driver devolver o nome sem byte nulo.
+    // `device_name_as_c_str` does what the old `CStr::from_ptr` did, but
+    // looking for the terminator inside the array — no `unsafe`, and no
+    // out-of-bounds read if the driver returns a name without a NUL byte.
     let name = properties
         .device_name_as_c_str()
         .unwrap_or(c"<nome inválido>")
@@ -271,10 +259,10 @@ fn find_graphics_queue_family(
             continue;
         }
 
-        // Surface e physical device saem da mesma instance, criada no
-        // `Engine::new`.
+        // The surface and the physical device come from the same instance,
+        // created in `Engine::new`.
         let present_supported = unsafe { device.surface_support(surface, i) }
-            .context("query the surface support for the queue family")?;
+            .context("query surface support for the queue family")?;
 
         if present_supported {
             return Ok(i);
@@ -295,9 +283,9 @@ fn create_logical_device(
         .queue_family_index(queue_family_index)
         .queue_priorities(&queue_priorities)];
 
-    // Equivalente ao vk::StructureChain do C++: aqui a cadeia de pNext é
-    // montada com push_next(), e o borrow checker garante que cada struct
-    // encadeada continua viva até a chamada.
+    // Equivalent to C++'s vk::StructureChain: the pNext chain is assembled
+    // with push_next(), and the borrow checker guarantees each chained struct
+    // stays alive until the call.
     let mut vulkan13_features = vk::PhysicalDeviceVulkan13Features::default()
         .synchronization2(true)
         .dynamic_rendering(true);
@@ -317,5 +305,5 @@ fn create_logical_device(
         .enabled_extension_names(&extension_names)
         .push_next(&mut features);
 
-    unsafe { physical_device.create_device(&device_info) }.context("create device")
+    unsafe { physical_device.create_device(&device_info) }.context("create the device")
 }

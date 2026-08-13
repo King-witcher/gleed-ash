@@ -1,10 +1,10 @@
-//! Equivalente a modules/engine/src/input.{h,cc}.
+//! Equivalent to modules/engine/src/input.{h,cc}.
 //!
-//! Mesma máquina de estados do C++: `update()` drena a fila de eventos da SDL
-//! e atualiza os conjuntos consultados por `is_key_down` / `was_key_pressed`.
+//! Same state machine as C++: `update()` drains the SDL event queue and
+//! updates the sets queried by `is_key_down` / `was_key_pressed`.
 //!
-//! Diferença de representação: o C++ usava `bool keysDown[512]` indexado pelo
-//! scancode; aqui `Scancode` é um enum, então usamos `HashSet`. Mesma semântica.
+//! Representation difference: C++ used a `bool keysDown[512]` indexed by
+//! scancode; here `Scancode` is an enum, so we use `HashSet`. Same semantics.
 
 use std::collections::HashSet;
 
@@ -53,10 +53,10 @@ impl Input {
     }
 
     pub fn update(&mut self) {
-        // NOTA: igual ao C++, os conjuntos `*_pressed` NÃO são limpos aqui —
-        // só em `clear()`. Ou seja, `was_key_pressed` continua verdadeiro até
-        // alguém chamar `clear()`. Para virar "pressionado neste frame", bastava
-        // limpar os dois no topo deste método. Mantido como está por fidelidade.
+        // NOTE: as in C++, the `*_pressed` sets are NOT cleared here — only in
+        // `clear()`. That is, `was_key_pressed` stays true until someone calls
+        // `clear()`. To mean "pressed this frame", clearing both at the top of
+        // this method would do. Kept as is for fidelity.
         for event in self.event_pump.poll_iter() {
             match event {
                 Event::KeyDown {

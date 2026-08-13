@@ -1,28 +1,30 @@
-//! Equivalente a modules/engine/src/swapchain.{h,cc}.
+//! Equivalent to modules/engine/src/swapchain.{h,cc}.
 //!
-//! Diferença de modelagem: no C++ `AcquireNextImage` devolvia `SwapchainImage&`
-//! e o `RenderPass` guardava essa referência. Em Rust isso brigaria com o
-//! borrow checker (a mesma `Swapchain` precisa ser `&mut` depois, no present).
-//! Como handles Vulkan são só inteiros opacos, `SwapchainImage` aqui é `Copy` e
-//! sai por valor. Quem continua dono de verdade das ImageViews e dos semáforos
-//! é a `Swapchain`.
+//! Modeling difference: in C++ `AcquireNextImage` returned a `SwapchainImage&`
+//! and the `RenderPass` held that reference. In Rust that would fight the
+//! borrow checker (the same `Swapchain` must be `&mut` later, for present).
+//! Since Vulkan handles are just opaque integers, `SwapchainImage` here is
+//! `Copy` and goes out by value. The real owner of the ImageViews and the
+//! semaphores is still the `Swapchain`.
 
 use crate::device::Device;
 use crate::prelude::*;
 
-/// Handles crus de uma imagem da swapchain, copiáveis por serem só inteiros
-/// opacos. Quem é dono de verdade é o [`ImageResources`] correspondente.
+/// Raw handles of one swapchain image, copyable because they are only opaque
+/// integers. The real owner is the matching [`ImageResources`].
 #[derive(Clone, Copy)]
 pub struct SwapchainImage {
     pub index: u32,
     pub image: vk::Image,
     pub image_view: vk::ImageView,
-    /// Indica que o renderer terminou de desenhar e a imagem pode ser apresentada.
+    /// Signals that the renderer finished drawing and the image can be
+    /// presented.
     pub render_finished: vk::Semaphore,
 }
 
-/// O que a `Swapchain` de fato possui por imagem. A imagem em si é da swapchain
-/// e some com ela; a view e o semáforo se destroem sozinhos.
+/// What the `Swapchain` actually owns per image. The image itself belongs to
+/// the swapchain and goes away with it; the view and the semaphore destroy
+/// themselves.
 struct ImageResources {
     image: vk::Image,
     image_view: vk::raii::ImageView,
@@ -41,10 +43,10 @@ impl ImageResources {
 }
 
 pub struct Swapchain {
-    // A ORDEM DOS CAMPOS É A ORDEM DE DESTRUIÇÃO. As image views vêm das
-    // imagens da swapchain, então morrem antes dela; e a swapchain antes da
-    // surface. O `vk::raii` garante que nada disso passa do device, mas a ordem
-    // entre irmãos continua sendo daqui.
+    // FIELD ORDER IS DESTRUCTION ORDER. The image views come from the
+    // swapchain's images, so they die before it; and the swapchain before the
+    // surface. `vk::raii` guarantees none of this outlives the device, but
+    // sibling order is still ours.
     images: Vec<ImageResources>,
     swapchain: vk::raii::Swapchain,
     surface: vk::raii::Surface,
@@ -57,7 +59,7 @@ pub struct Swapchain {
 
 impl Swapchain {
     pub fn new(device: Device, surface: vk::raii::Surface) -> Result<Self> {
-        let present_queue = device.get_queue(device.present_index());
+        let present_queue = device.queue(device.present_index());
         let (swapchain, image_format, extent) =
             create_swapchain(&device, &surface, vk::SwapchainKHR::null())?;
         let images = create_images(&device, &swapchain, image_format)?;
@@ -76,8 +78,8 @@ impl Swapchain {
 
     pub fn acquire_next_image(&mut self, image_available: vk::Semaphore) -> Result<SwapchainImage> {
         loop {
-            // O semáforo é do frame in flight que o renderer acabou de esperar,
-            // então não há nenhum acquire pendente nele.
+            // The semaphore belongs to the frame in flight the renderer just
+            // waited on, so no acquire is pending on it.
             let result = unsafe {
                 self.swapchain
                     .acquire_next_image(u64::MAX, image_available, vk::Fence::null())
@@ -85,19 +87,19 @@ impl Swapchain {
 
             match result {
                 Ok((index, suboptimal)) => {
-                    // Suboptimal é código de sucesso: a imagem FOI adquirida e o
-                    // semáforo SERÁ sinalizado, então o frame precisa ser
-                    // renderizado e apresentado normalmente. A recriação espera
-                    // o próximo frame boundary.
+                    // Suboptimal is a success code: the image WAS acquired and
+                    // the semaphore WILL be signaled, so the frame must be
+                    // rendered and presented normally. Recreation waits for the
+                    // next frame boundary.
                     if suboptimal {
                         self.needs_recreate = true;
                     }
                     return Ok(self.images[index as usize].handles(index));
                 }
                 Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    // Nenhuma imagem foi adquirida e o semáforo não foi
-                    // sinalizado, então é seguro tentar de novo com o mesmo
-                    // semáforo depois de recriar.
+                    // No image was acquired and the semaphore was not signaled,
+                    // so it is safe to retry with the same semaphore after
+                    // recreating.
                     self.recreate()?;
                 }
                 Err(error) => return Err(error).context("acquire the next swapchain image"),
@@ -115,7 +117,8 @@ impl Swapchain {
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 
-        // A queue só é usada aqui e no submit do frame, ambos na mesma thread.
+        // The queue is only used here and in the frame's submit, both on the
+        // same thread.
         let result = unsafe {
             self.swapchain
                 .queue_present(&self.present_queue, &present_info)
@@ -123,9 +126,9 @@ impl Swapchain {
 
         match result {
             Ok(false) => {}
-            // A imagem já foi consumida pela chamada de present; a recriação é
-            // adiada para o próximo frame boundary, onde não existe nenhuma
-            // referência por-frame para dentro da swapchain.
+            // The image was already consumed by the present call; recreation is
+            // deferred to the next frame boundary, where no per-frame reference
+            // into the swapchain exists.
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.needs_recreate = true,
             Err(error) => return Err(error).context("present the swapchain image"),
         }
@@ -133,9 +136,9 @@ impl Swapchain {
         Ok(())
     }
 
-    /// Recria a swapchain se um acquire/present anterior a reportou como out of
-    /// date ou suboptimal. Precisa ser chamado no frame boundary, antes de
-    /// existir qualquer referência para dentro das imagens da swapchain.
+    /// Recreates the swapchain if a previous acquire/present reported it as
+    /// out of date or suboptimal. Must be called at the frame boundary, before
+    /// any reference into the swapchain images exists.
     pub fn recreate_if_needed(&mut self) -> Result<()> {
         if !self.needs_recreate {
             return Ok(());
@@ -158,9 +161,9 @@ impl Swapchain {
         let (swapchain, image_format, extent) =
             create_swapchain(&self.device, &self.surface, self.swapchain.handle())?;
 
-        // Só depois de criar a nova é que as views da antiga podem morrer, e só
-        // depois delas é que a antiga em si pode ser destruída — que é o que a
-        // atribuição abaixo faz.
+        // Only after the new one exists may the old one's views die, and only
+        // after them the old swapchain itself — which is what the assignment
+        // below does.
         self.images.clear();
         self.swapchain = swapchain;
         self.image_format = image_format;
@@ -173,7 +176,8 @@ impl Swapchain {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
-        // Não há como propagar de um Drop: se o wait falhou, destrói do mesmo jeito.
+        // There is no propagating from a Drop: if the wait failed, destroy
+        // anyway.
         self.device.wait_idle().ok();
     }
 }
@@ -196,21 +200,22 @@ fn create_swapchain(
         .image_format(format.format)
         .image_color_space(format.color_space)
         .image_extent(extent)
-        // 1 porque não estamos fazendo 3D estereoscópico
+        // 1 because we are not doing stereoscopic 3D
         .image_array_layers(1)
         .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
         .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
         .pre_transform(support.capabilities.current_transform)
         .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
         .present_mode(present_mode)
-        // Corta pixels obscurecidos por outras janelas. Pode bugar efeitos
-        // de blur, porém.
+        // Discards pixels obscured by other windows. May break blur effects,
+        // though.
         .clipped(true);
 
-    // A extensão está em REQUIRED_EXTENSIONS e a surface veio da mesma instance
-    // do device; `old` ou é nula ou é a swapchain que estamos substituindo.
+    // The extension is in REQUIRED_EXTENSIONS and the surface came from the
+    // same instance as the device; `old` is either null or the swapchain being
+    // replaced.
     let swapchain =
-        unsafe { device.vk().create_swapchain(&create_info) }.context("create swapchain")?;
+        unsafe { device.vk().create_swapchain(&create_info) }.context("create the swapchain")?;
 
     Ok((swapchain, format.format, extent))
 }
@@ -243,8 +248,8 @@ fn create_images(
                     layer_count: 1,
                 });
 
-            let image_view =
-                unsafe { device.vk().create_image_view(&view_info) }.context("create image view")?;
+            let image_view = unsafe { device.vk().create_image_view(&view_info) }
+                .context("create the image view")?;
 
             Ok(ImageResources {
                 image,
@@ -276,9 +281,9 @@ fn choose_swap_present_mode(_present_modes: &[vk::PresentModeKHR]) -> vk::Presen
 }
 
 fn choose_swap_extent(capabilities: &vk::SurfaceCapabilitiesKHR) -> Result<vk::Extent2D> {
-    // Se width e height forem 0xFFFFFFFF, o tamanho da surface deveria ser
-    // determinado pela extent da swapchain. Não suportamos surface dinâmica por
-    // ora, então descartamos esse cenário.
+    // If width and height are 0xFFFFFFFF, the surface size would be determined
+    // by the swapchain extent. We do not support dynamic surfaces for now, so
+    // this scenario is rejected.
     if (capabilities.current_extent.width | capabilities.current_extent.height) == u32::MAX {
         return Err(Error::unsupported("dynamic surface extent"));
     }

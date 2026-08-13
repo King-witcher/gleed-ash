@@ -1,30 +1,31 @@
-//! Equivalente a modules/engine/src/pipeline.{h,cc}.
+//! Equivalent to modules/engine/src/pipeline.{h,cc}.
 
 use std::io::Cursor;
 
 use crate::device::Device;
+use crate::mesh::Vertex;
 use crate::prelude::*;
-use crate::vertex::Vertex;
 
-/// O SPIR-V vai embutido no executável. O build.rs compila `shaders/mesh.slang`
-/// antes de cada build, e o `include_bytes!` resolve o caminho em relação a
-/// ESTE arquivo — então um caminho errado vira erro de compilação, não uma
-/// falha em runtime, e o binário não depende mais de nada no disco. O C++ lia o
-/// .spv na hora e por isso dependia do CWD ser a raiz do projeto.
-const SHADER_SPV: &[u8] = include_bytes!("shaders/mesh.spv");
+/// The SPIR-V is embedded in the executable. build.rs compiles
+/// `shaders/mesh.slang` before every build, and `include_bytes!` resolves the
+/// path relative to THIS file — so a wrong path becomes a compile error, not a
+/// runtime failure, and the binary no longer depends on anything on disk. The
+/// C++ read the .spv at startup and therefore depended on the CWD being the
+/// project root.
+const SHADER_SPV: &[u8] = include_bytes!("../shaders/mesh.spv");
 
-pub struct Pipeline {
-    // A ORDEM DOS CAMPOS É A ORDEM DE DESTRUIÇÃO: a pipeline morre antes dos
-    // layouts que a descrevem. Cada um deles segura o device por refcount, então
-    // não há mais `impl Drop` aqui — nem o vazamento que existia quando a
-    // criação da pipeline falhava depois dos layouts.
+pub(super) struct Pipeline {
+    // FIELD ORDER IS DESTRUCTION ORDER: the pipeline dies before the layouts
+    // that describe it. Each of them holds the device by refcount, so there is
+    // no `impl Drop` here anymore — nor the leak that existed when pipeline
+    // creation failed after the layouts.
     pipeline: vk::raii::Pipeline,
     layout: vk::raii::PipelineLayout,
     descriptor_set_layout: vk::raii::DescriptorSetLayout,
 }
 
 impl Pipeline {
-    pub fn new(device: Device, image_format: vk::Format) -> Result<Self> {
+    pub(super) fn new(device: Device, image_format: vk::Format) -> Result<Self> {
         let descriptor_set_layout = make_descriptor_set_layout(&device)?;
         let layout = make_pipeline_layout(&device, &descriptor_set_layout)?;
         let pipeline = make_pipeline(&device, &layout, image_format)?;
@@ -36,37 +37,37 @@ impl Pipeline {
         })
     }
 
-    /// Precisa ser bindada dentro de um renderpass.
-    pub fn vk_pipeline(&self) -> vk::Pipeline {
+    /// Must be bound inside a render pass.
+    pub(super) fn vk_pipeline(&self) -> vk::Pipeline {
         self.pipeline.handle()
     }
 
-    pub fn layout(&self) -> vk::PipelineLayout {
+    pub(super) fn layout(&self) -> vk::PipelineLayout {
         self.layout.handle()
     }
 
-    pub fn descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+    pub(super) fn descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
         self.descriptor_set_layout.handle()
     }
 }
 
 fn shader_code() -> Vec<u32> {
-    // read_spv já valida o magic number e resolve o alinhamento de u32 — o que
-    // no C++ era um reinterpret_cast<const u32*> torcendo para dar certo. Ele
-    // continua necessário mesmo com os bytes embutidos: o `include_bytes!` dá um
-    // `&[u8]` alinhado em 1, e o vkCreateShaderModule exige `[u32]`. A cópia
-    // acontece uma vez, na criação da pipeline.
+    // read_spv validates the magic number and settles the u32 alignment —
+    // what in C++ was a reinterpret_cast<const u32*> hoping for the best. It
+    // is still needed even with the bytes embedded: `include_bytes!` gives a
+    // 1-aligned `&[u8]`, and vkCreateShaderModule wants `[u32]`. The copy
+    // happens once, at pipeline creation.
     //
-    // `expect` e não `?`: estes bytes são constantes de compilação. Se não forem
-    // SPIR-V válido, o build gerou um .spv quebrado — bug nosso, não condição de
-    // ambiente que o chamador possa tratar.
+    // `expect`, not `?`: these bytes are compile-time constants. If they are
+    // not valid SPIR-V, the build produced a broken .spv — our bug, not an
+    // environment condition the caller could handle.
     vk::util::read_spv(&mut Cursor::new(SHADER_SPV)).expect("o SPIR-V embutido é inválido")
 }
 
 fn make_descriptor_set_layout(device: &Device) -> Result<vk::raii::DescriptorSetLayout> {
     let bindings = [vk::DescriptorSetLayoutBinding::default()
         .binding(0)
-        // podemos ter um array de uniform buffers
+        // we can have an array of uniform buffers
         .descriptor_count(1)
         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
         .stage_flags(vk::ShaderStageFlags::VERTEX)];
@@ -74,18 +75,19 @@ fn make_descriptor_set_layout(device: &Device) -> Result<vk::raii::DescriptorSet
     let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe { device.vk().create_descriptor_set_layout(&info) }
-        .context("create descriptor set layout")
+        .context("create the descriptor set layout")
 }
 
 fn make_pipeline_layout(
     device: &Device,
     descriptor_set_layout: &vk::raii::DescriptorSetLayout,
 ) -> Result<vk::raii::PipelineLayout> {
-    // Anexa o descriptor set layout do UBO para os shaders lerem `set = 0, binding = 0`.
+    // Attaches the UBO's descriptor set layout so the shaders can read
+    // `set = 0, binding = 0`.
     let set_layouts = [descriptor_set_layout.handle()];
     let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
 
-    unsafe { device.vk().create_pipeline_layout(&info) }.context("create pipeline layout")
+    unsafe { device.vk().create_pipeline_layout(&info) }.context("create the pipeline layout")
 }
 
 fn make_pipeline(
@@ -93,12 +95,18 @@ fn make_pipeline(
     layout: &vk::raii::PipelineLayout,
     format: vk::Format,
 ) -> Result<vk::raii::Pipeline> {
-    let shader_module = device.create_shader_module(&shader_code())?;
+    let code = shader_code();
+    let shader_module = unsafe {
+        device
+            .vk()
+            .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&code))
+    }
+    .context("create the shader module")?;
 
     let binding_descriptions = [Vertex::binding_description()];
     let attribute_descriptions = Vertex::attribute_descriptions();
 
-    // Funções fixas
+    // Fixed functions
     let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
         .vertex_binding_descriptions(&binding_descriptions)
         .vertex_attribute_descriptions(&attribute_descriptions);
@@ -106,7 +114,7 @@ fn make_pipeline(
     let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
 
-    // Viewport e scissor são dinâmicos (definidos no command buffer).
+    // Viewport and scissor are dynamic (set on the command buffer).
     let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
     let dynamic_state =
         vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
@@ -120,9 +128,9 @@ fn make_pipeline(
         .rasterizer_discard_enable(false)
         .polygon_mode(vk::PolygonMode::FILL)
         .cull_mode(vk::CullModeFlags::BACK)
-        // CCW: a projeção inverte Y (proj[1][1] *= -1) para casar com o clip
-        // space do Vulkan, o que inverte o winding que o rasterizador enxerga.
-        // As faces frontais viram CCW.
+        // CCW: the projection flips Y (proj[1][1] *= -1) to match Vulkan's
+        // clip space, which flips the winding the rasterizer sees. Front faces
+        // become CCW.
         .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
         .depth_bias_enable(false)
         .depth_bias_slope_factor(1.0)
@@ -140,7 +148,7 @@ fn make_pipeline(
         .logic_op(vk::LogicOp::COPY)
         .attachments(&color_blend_attachments);
 
-    // Necessário para dynamic rendering
+    // Required for dynamic rendering
     let color_attachment_formats = [format];
     let mut pipeline_rendering_info = vk::PipelineRenderingCreateInfo::default()
         .color_attachment_formats(&color_attachment_formats);
@@ -168,10 +176,10 @@ fn make_pipeline(
         .dynamic_state(&dynamic_state)
         .layout(layout.handle());
 
-    // Sem cache por enquanto. As structs encadeadas acima continuam vivas até
-    // aqui, e o shader module some sozinho no fim da função — inclusive no
-    // caminho de erro. O erro não é um VkResult puro porque a criação pode
-    // falhar em parte das pipelines do lote.
+    // No cache for now. The chained structs above stay alive until here, and
+    // the shader module goes away on its own at the end of the function —
+    // including on the error path. The error is not a plain VkResult because
+    // creation can fail for part of the batch's pipelines.
     let created = unsafe {
         device
             .vk()

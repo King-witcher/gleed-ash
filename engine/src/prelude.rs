@@ -1,9 +1,9 @@
-//! O que todo módulo do engine importa com `use crate::prelude::*`.
+//! What every engine module imports with `use crate::prelude::*`.
 //!
-//! Não reexporta o `vk::VkResult` de propósito: ele é o retorno **cru** de
-//! cada chamada Vulkan e não deve escapar do ponto da chamada. O caminho dele
-//! para o `Result` do engine é sempre o `.context(..)` do [`Context`], e nenhuma
-//! função da crate devolve `VkResult` — se alguma voltasse a devolver, seria
-//! sinal de que um erro está sendo repassado sem dizer qual chamada falhou.
+//! Deliberately does not reexport `vk::VkResult`: it is the **raw** return of
+//! each Vulkan call and must not escape the call site. Its path to the
+//! engine's `Result` is always [`Context`]'s `.context(..)`, and no function
+//! in the crate returns `VkResult` — if one did again, it would be a sign an
+//! error is being passed along without saying which call failed.
 
 pub use crate::error::{Context, Error, Result};

@@ -1,58 +1,55 @@
-//! Equivalente a modules/engine/src/renderer.{h,cc}.
+//! Equivalent to modules/engine/src/renderer.{h,cc}.
 //!
-//! O [`Frame`] é um "token linear" que precisa ser consumido por `submit`
-//! exatamente uma vez. No C++ isso era simulado com construtor de move +
-//! destrutor que dá panic. Em Rust o próprio sistema de tipos faz metade do
-//! trabalho: `submit` recebe o `Frame` **por valor**, então usá-lo depois é erro
-//! de compilação, não de runtime.
+//! [`Frame`] is a "linear token" that must be consumed by `submit` exactly
+//! once. C++ simulated that with a move constructor + a panicking destructor.
+//! In Rust the type system does half the work: `submit` takes the `Frame`
+//! **by value**, so using it afterwards is a compile error, not a runtime one.
 //!
-//! Regra de custo do módulo: **refcount na hierarquia grossa, empréstimo na
-//! gravação**. Device, command pool, pipeline e buffers são refcontados uma vez,
-//! na criação; o `Frame` só carrega referências para as partes do frame in
-//! flight que usa. Gravar um frame — inclusive os milhares de `cmd_*` — não
-//! incrementa contador nenhum, e o borrow checker é quem garante que nada some
-//! no meio da gravação.
+//! The module's cost rule: **refcount on the coarse hierarchy, borrows while
+//! recording**. Device, command pool, pipeline and buffers are refcounted
+//! once, at creation; the `Frame` only carries references to the parts of the
+//! frame in flight it uses. Recording a frame — including the thousands of
+//! `cmd_*` — bumps no counter, and the borrow checker is what guarantees
+//! nothing disappears mid-recording.
 
 mod commands;
 mod frame;
 mod frame_in_flight;
+mod pipeline;
 mod uniform;
 
-use std::rc::Rc;
 use std::time::Instant;
 
-use crate::allocator::Allocator;
 use crate::device::Device;
-use crate::pipeline::Pipeline;
+use crate::memory::Allocator;
 use crate::prelude::*;
 use crate::swapchain::Swapchain;
 use commands::{begin_rendering, transition_rendering};
 use frame::MustSubmit;
 use frame_in_flight::{make_descriptor_pool, FrameInFlight};
+use pipeline::Pipeline;
 
 pub use frame::Frame;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct Renderer {
-    // A ORDEM DOS CAMPOS É A ORDEM DE DESTRUIÇÃO: os frames usam descriptor sets
-    // do pool abaixo, e destruir o pool já os libera — não é preciso o
-    // FREE_DESCRIPTOR_SET que o C++ usava (lá cada vk::raii::DescriptorSet se
-    // liberava individualmente).
+    // FIELD ORDER IS DESTRUCTION ORDER: the frames use descriptor sets from
+    // the pool below, and destroying the pool releases them — no need for the
+    // FREE_DESCRIPTOR_SET the C++ used (there each vk::raii::DescriptorSet
+    // freed itself individually).
     frames: Vec<FrameInFlight>,
     descriptor_pool: vk::raii::DescriptorPool,
     pipeline: Pipeline,
     graphics_queue: vk::raii::Queue,
-    #[allow(dead_code)]
-    allocator: Rc<Allocator>,
     device: Device,
     next_frame: usize,
     start_time: Instant,
 }
 
 impl Renderer {
-    pub fn new(device: Device, allocator: Rc<Allocator>, swapchain: &Swapchain) -> Result<Self> {
-        let graphics_queue = device.get_queue(device.graphics_index());
+    pub fn new(device: Device, allocator: &Allocator, swapchain: &Swapchain) -> Result<Self> {
+        let graphics_queue = device.queue(device.graphics_index());
         let pipeline = Pipeline::new(device.clone(), swapchain.image_format())?;
         let descriptor_pool = make_descriptor_pool(&device)?;
 
@@ -60,7 +57,7 @@ impl Renderer {
             .map(|_| {
                 FrameInFlight::new(
                     &device,
-                    &allocator,
+                    allocator,
                     &descriptor_pool,
                     pipeline.descriptor_set_layout(),
                 )
@@ -72,7 +69,6 @@ impl Renderer {
             descriptor_pool,
             pipeline,
             graphics_queue,
-            allocator,
             device,
             next_frame: 0,
             start_time: Instant::now(),
@@ -80,23 +76,24 @@ impl Renderer {
     }
 
     pub fn begin_frame<'a>(&'a mut self, swapchain: &mut Swapchain) -> Result<Frame<'a>> {
-        // Frame boundary: não existe nenhum Frame ou SwapchainImage vivo e
-        // nenhum semáforo está prestes a ser esperado, então recriar aqui é seguro.
+        // Frame boundary: no Frame or SwapchainImage is alive and no semaphore
+        // is about to be waited on, so recreating here is safe.
         swapchain.recreate_if_needed()?;
 
         let frame_index = self.next_frame;
         self.next_frame = (self.next_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 
-        // Emprestados antes do frame in flight: são campos disjuntos do
-        // Renderer, então convivem com o `&mut self.frames` de baixo.
+        // Borrowed before the frame in flight: they are disjoint fields of the
+        // Renderer, so they coexist with the `&mut self.frames` below.
         let start_time = self.start_time;
         let pipeline = &self.pipeline;
         let queue = &self.graphics_queue;
 
         let frame = &mut self.frames[frame_index];
 
-        // A fence só é esperada aqui e só é sinalizada pelo submit deste mesmo
-        // frame in flight, então nada mais depende dela neste ponto.
+        // The fence is only waited on here and only signaled by this same
+        // frame in flight's submit, so nothing else depends on it at this
+        // point.
         unsafe {
             frame
                 .fence
@@ -110,8 +107,8 @@ impl Renderer {
         let extent = swapchain.extent();
         let command_buffer = &mut frame.command_buffer;
 
-        // A fence acima já garantiu que a GPU terminou com este pool, e o
-        // `&mut self` que ninguém mais está gravando nele.
+        // The fence above already guaranteed the GPU is done with this pool,
+        // and the `&mut self` that nothing else is recording into it.
         unsafe {
             frame
                 .command_pool

@@ -1,23 +1,23 @@
-//! Vulkan para este workspace: a superfície da `ash` que de fato usamos, mais a
-//! camada RAII em cima dela.
+//! Vulkan for this workspace: the slice of `ash` we actually use, plus the
+//! RAII layer on top of it.
 //!
-//! Três coisas diferentes compartilham cada nome, e vale mantê-las separadas:
+//! Three different things share each name, and keeping them apart matters:
 //!
-//! - [`Device`] — o `VkDevice` cru, um inteiro opaco. Não sabe fazer nada
-//!   sozinho.
-//! - [`raw::Device`] — o device carregado da `ash`: esse handle mais a tabela
-//!   de dispatch que o serve. É quem sabe chamar `vkCmdDraw`.
-//! - [`raii::Device`] — o que este crate acrescenta: um `raw::Device` que é
-//!   dono de si, mantém o pai vivo e se destrói sozinho.
+//! - [`Device`] — the raw `VkDevice`, an opaque integer. Can do nothing by
+//!   itself.
+//! - [`raw::Device`] — the loaded device from `ash`: that handle plus the
+//!   dispatch table serving it. It is what knows how to call `vkCmdDraw`.
+//! - [`raii::Device`] — what this crate adds: a `raw::Device` that owns
+//!   itself, keeps its parent alive and destroys itself.
 //!
-//! Nada fora daqui deve depender da `ash` diretamente — o que for preciso é
-//! reexportado neste módulo.
+//! Nothing outside this crate should depend on `ash` directly — whatever is
+//! needed gets reexported here.
 
 pub mod raii;
 
-/// Os objetos *carregados* da `ash`: um handle junto da tabela de dispatch que
-/// o serve. Ficam num módulo à parte porque [`Device`] e [`Instance`], no raiz,
-/// são os handles pelados.
+/// The *loaded* `ash` objects: a handle together with the dispatch table that
+/// serves it. They live in a separate module because [`Device`] and
+/// [`Instance`], at the root, are the bare handles.
 pub mod raw {
     pub use ash::{Device, Instance};
 }

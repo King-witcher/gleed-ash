@@ -1,8 +1,8 @@
-//! Compila os `.slang` de `src/shaders/` para SPIR-V antes de cada build.
+//! Compiles the `.slang` files in `src/shaders/` to SPIR-V before every build.
 //!
-//! Equivalente ao `slangc.sh`, mas plugado no `cargo build`: os shaders são
-//! compilados em paralelo (um processo `slangc` por arquivo) e o relatório só
-//! sai depois que todos terminam, na ordem em que foram encontrados.
+//! Equivalent to `slangc.sh`, but plugged into `cargo build`: the shaders
+//! compile in parallel (one `slangc` process per file) and the report only
+//! comes out after all of them finish, in the order they were found.
 
 use std::env;
 use std::fs;
@@ -18,9 +18,9 @@ fn main() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let shader_dir = root.join(SHADER_DIR);
 
-    // Rebuild quando um shader mudar (ou quando um novo for adicionado ao dir).
-    // Os `.spv` gerados não estão nessa lista, então escrever dentro de `src/`
-    // não dispara um novo build em loop.
+    // Rebuild when a shader changes (or when a new one is added to the dir).
+    // The generated `.spv` files are not on this list, so writing inside
+    // `src/` does not trigger another build in a loop.
     println!("cargo::rerun-if-changed={}", shader_dir.display());
 
     let shaders = collect_shaders(&shader_dir).expect("failed to collect shaders");
@@ -29,17 +29,17 @@ fn main() {
         println!("cargo::rerun-if-changed={}", shader.display());
     }
 
-    // Fan out: dispara todos os `slangc` de uma vez. A thread existe só para
-    // drenar os pipes de stdout/stderr do filho — sem isso, um compilador
-    // verboso encheria o buffer do pipe e travaria esperando alguém ler.
+    // Fan out: spawns every `slangc` at once. The thread exists only to drain
+    // the child's stdout/stderr pipes — without it, a verbose compiler would
+    // fill the pipe buffer and stall waiting for a reader.
     let jobs: Vec<_> = shaders
         .into_iter()
         .map(|shader| thread::spawn(move || (compile(&shader), shader)))
         .collect();
 
-    // Await: `join` bloqueia até aquele job terminar e devolve o resultado
-    // dele. Como o loop percorre na ordem original, o relatório é determinístico
-    // mesmo com os processos terminando fora de ordem.
+    // Await: `join` blocks until that job finishes and returns its result.
+    // Since the loop walks in the original order, the report is deterministic
+    // even with the processes finishing out of order.
     let total = jobs.len();
     let mut failures = 0;
 
@@ -119,9 +119,9 @@ fn collect_shaders(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(entries)
 }
 
-/// Cargo engole stdout/stderr de build script (só aparecem com `-vv`), então a
-/// única forma de falar com o usuário durante um build bem-sucedido é
-/// `cargo::warning=`. Uma linha por mensagem: `\n` embutido é truncado.
+/// Cargo swallows a build script's stdout/stderr (they only show with `-vv`),
+/// so the only way to talk to the user during a successful build is
+/// `cargo::warning=`. One line per message: embedded `\n` gets truncated.
 fn warn(message: impl AsRef<str>) {
     println!("cargo::warning={}", message.as_ref());
 }

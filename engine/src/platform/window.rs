@@ -1,9 +1,9 @@
-//! Equivalente a modules/engine/src/window.{h,cc}.
+//! Equivalent to modules/engine/src/window.{h,cc}.
 //!
-//! Mesma SDL3 do engine C++, só que pela crate `sdl3`. Com a feature "ash"
-//! ligada, o SDL já devolve os handles tipados, e o Cargo unifica essas
-//! bindings com as que a crate `vk` reexporta — então os tipos são os mesmos e
-//! não existe nenhum cast entre o `VkInstance` do SDL e o nosso.
+//! Same SDL3 as the C++ engine, through the `sdl3` crate. With the "ash"
+//! feature on, SDL already returns typed handles, and Cargo unifies those
+//! bindings with the ones the `vk` crate reexports — so the types are the same
+//! and there is no cast between SDL's `VkInstance` and ours.
 
 use std::ffi::CString;
 
@@ -18,8 +18,8 @@ pub struct Size {
 }
 
 pub struct Window {
-    // A ordem dos campos É a ordem de destruição no Rust. A janela precisa
-    // morrer antes do subsistema de vídeo, e este antes do contexto SDL.
+    // Field order IS destruction order in Rust. The window must die before the
+    // video subsystem, and it before the SDL context.
     window: SdlWindow,
     _video: VideoSubsystem,
     sdl: Sdl,
@@ -28,12 +28,10 @@ pub struct Window {
 impl Window {
     pub fn new(title: &str) -> Result<Self> {
         let sdl = sdl3::init().context("initialize SDL3")?;
-        let video = sdl
-            .video()
-            .context("initialize the SDL video subsystem")?;
+        let video = sdl.video().context("initialize the SDL video subsystem")?;
 
-        // set_flags() sobrescreve os flags acumulados, então vem primeiro;
-        // vulkan()/resizable() depois só acrescentam. Mesma combinação do C++:
+        // set_flags() overwrites the accumulated flags, so it comes first;
+        // vulkan()/resizable() afterwards only add. Same combination as C++:
         // SDL_WINDOW_VULKAN | SDL_WINDOW_MOUSE_RELATIVE_MODE | SDL_WINDOW_RESIZABLE.
         let window = video
             .window(title, 800, 600)
@@ -50,30 +48,31 @@ impl Window {
         })
     }
 
-    /// Handle do contexto SDL — o `Input` precisa dele para abrir o event pump.
-    /// No C++ isto não existia porque SDL_PollEvent é global.
+    /// Handle to the SDL context — `Input` needs it to open the event pump.
+    /// This did not exist in C++ because SDL_PollEvent is global.
     pub fn sdl(&self) -> &Sdl {
         &self.sdl
     }
 
     /// # Safety
-    /// `instance` precisa ser uma VkInstance válida e viva.
+    /// `instance` must be a valid, live VkInstance.
     pub unsafe fn vulkan_surface(&self, instance: vk::Instance) -> Result<vk::SurfaceKHR> {
         self.window
             .vulkan_create_surface(instance)
             .context("create the Vulkan surface")
     }
 
-    /// Extensões de instância que a SDL exige para conseguir criar a surface.
-    /// O C++ devolvia um `span<const char*>` apontando para memória da SDL;
-    /// aqui copiamos para `CString` para não depender do tempo de vida dela.
+    /// Instance extensions SDL requires in order to create the surface. The
+    /// C++ returned a `span<const char*>` pointing into SDL memory; here we
+    /// copy into `CString`s to not depend on its lifetime.
     pub fn required_vulkan_extensions(&self) -> Result<Vec<CString>> {
         let names = self
             .window
             .vulkan_instance_extensions()
             .context("query the required Vulkan instance extensions")?;
 
-        // Um nome com NUL no meio seria bug da SDL, não condição de ambiente.
+        // A name with an interior NUL would be an SDL bug, not an environment
+        // condition.
         Ok(names
             .into_iter()
             .map(|name| CString::new(name).expect("extension name has an interior NUL"))
@@ -85,7 +84,7 @@ impl Window {
             .set_position(WindowPos::Positioned(x), WindowPos::Positioned(y));
     }
 
-    pub fn get_size(&self) -> Size {
+    pub fn size(&self) -> Size {
         let (width, height) = self.window.size_in_pixels();
         Size { width, height }
     }

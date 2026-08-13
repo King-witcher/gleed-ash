@@ -1,22 +1,22 @@
-//! Wrappers RAII finos sobre a `ash`, no espírito do `vulkan_raii.hpp`.
+//! Thin RAII wrappers over `ash`, in the spirit of `vulkan_raii.hpp`.
 //!
-//! Cada wrapper é dono do seu handle Vulkan, destrói ele no `Drop`, e faz
-//! `Deref` para o objeto da `ash` por baixo — então a API inteira da `ash`
-//! continua alcançável e nada precisa ser re-embrulhado método a método. O que
-//! este módulo acrescenta são os construtores que devolvem um wrapper em vez de
-//! um handle pelado, e os métodos que precisam de um pai que o tipo da `ash`
-//! não carrega ([`PhysicalDevice`], [`CommandBuffer`]).
+//! Each wrapper owns its Vulkan handle, destroys it on `Drop`, and `Deref`s to
+//! the underlying `ash` object — so the whole `ash` API stays reachable and
+//! nothing needs re-wrapping method by method. What this module adds are the
+//! constructors that return a wrapper instead of a bare handle, and the
+//! methods that need a parent the `ash` type does not carry
+//! ([`PhysicalDevice`], [`CommandBuffer`]).
 //!
-//! Nada aqui valida uso do Vulkan. Os métodos são `unsafe` sempre que a chamada
-//! que repassam é, e toda obrigação fica com quem chama: sincronização externa,
-//! estado do objeto, pais coincidentes, parâmetros válidos.
+//! Nothing here validates Vulkan usage. Methods are `unsafe` whenever the call
+//! they forward is, and every obligation stays with the caller: external
+//! synchronization, object state, matching parents, valid parameters.
 //!
-//! A única coisa que este módulo garante é **ordem de destruição**. Cada filho
-//! guarda um handle refcontado do pai, então um `vkDestroy*` nunca roda depois
-//! que o pai morreu — e nenhum lifetime vaza para a API, que é o que permite um
-//! struct ser dono de um device e dos objetos criados a partir dele.
+//! The only thing this module guarantees is **destruction order**. Each child
+//! holds a refcounted handle to its parent, so a `vkDestroy*` never runs after
+//! the parent is gone — and no lifetime leaks into the API, which is what lets
+//! a struct own a device and the objects created from it.
 //!
-//! Todo wrapper expõe `handle()`, devolvendo o handle da `ash` correspondente.
+//! Every wrapper exposes `handle()`, returning the matching `ash` handle.
 
 #[macro_use]
 mod macros;

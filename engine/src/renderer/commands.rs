@@ -1,14 +1,14 @@
-//! Comandos de render pass compartilhados entre o início do frame
-//! ([`super::Renderer::begin_frame`]) e o seu fim ([`super::Frame::submit`]).
+//! Render pass commands shared between the start of the frame
+//! ([`super::Renderer::begin_frame`]) and its end ([`super::Frame::submit`]).
 //!
-//! Todas as funções são `unsafe` pelo mesmo motivo: o `vk::raii` não checa a
-//! máquina de estados do command buffer, então quem chama é que garante que ele
-//! está gravando e que a imagem passada continua viva.
+//! Every function is `unsafe` for the same reason: `vk::raii` does not check
+//! the command buffer state machine, so the caller guarantees it is recording
+//! and that the image passed in stays alive.
 
 use crate::swapchain::SwapchainImage;
 
 /// # Safety
-/// Ver a nota do módulo.
+/// See the module note.
 pub(super) unsafe fn begin_rendering(
     command_buffer: &mut vk::raii::CommandBuffer,
     image: &SwapchainImage,
@@ -26,7 +26,7 @@ pub(super) unsafe fn begin_rendering(
         })];
 
     let rendering_info = vk::RenderingInfo::default()
-        // O retângulo da imagem que este render pass deve afetar.
+        // The rectangle of the image this render pass affects.
         .render_area(vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
@@ -37,8 +37,7 @@ pub(super) unsafe fn begin_rendering(
     unsafe {
         command_buffer.begin_rendering(&rendering_info);
 
-        // Define o tamanho do container dentro do qual a imagem renderizada será
-        // encaixada.
+        // Sets the size of the container the rendered image is fitted into.
         command_buffer.set_viewport(
             0,
             &[vk::Viewport {
@@ -62,26 +61,27 @@ pub(super) unsafe fn begin_rendering(
 }
 
 /// # Safety
-/// Ver a nota do módulo.
+/// See the module note.
 pub(super) unsafe fn transition_rendering(
     command_buffer: &mut vk::raii::CommandBuffer,
     image: vk::Image,
 ) {
     let barriers = [vk::ImageMemoryBarrier2::default()
-        // O que a transição deve esperar antes de rodar. Mesmo não havendo
-        // comandos antes na pipeline, cria uma dependência no estágio de
-        // Color Attachment Output. Isso impede a transição de acontecer antes
-        // do semáforo imageAvailable, que trava esse estágio, sinalizar.
+        // What the transition must wait for before running. Even with no
+        // earlier commands in the pipeline, this creates a dependency on the
+        // Color Attachment Output stage. It keeps the transition from
+        // happening before the imageAvailable semaphore — which gates that
+        // stage — signals.
         .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-        // Não há escritas de memória a tornar disponíveis.
+        // No memory writes to make available.
         .src_access_mask(vk::AccessFlags2::empty())
-        // O que deve esperar a transição antes de rodar.
+        // What must wait for the transition before running.
         .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-        // Torna este acesso visível (invalida cache)
+        // Makes this access visible (invalidates caches).
         .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
         .old_layout(vk::ImageLayout::UNDEFINED)
         .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        // Como usamos a mesma queue para tudo, nada precisa ser transferido.
+        // Everything runs on the same queue, so nothing needs transferring.
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .image(image)
@@ -92,21 +92,21 @@ pub(super) unsafe fn transition_rendering(
 }
 
 /// # Safety
-/// Ver a nota do módulo.
+/// See the module note.
 pub(super) unsafe fn transition_presentation(
     command_buffer: &mut vk::raii::CommandBuffer,
     image: vk::Image,
 ) {
     let barriers = [vk::ImageMemoryBarrier2::default()
-        // Espera todos os Color Attachment Outputs terminarem antes de voltar
-        // para o layout present optimal.
+        // Waits for every Color Attachment Output to finish before moving back
+        // to the present optimal layout.
         .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-        // Faz flush das escritas de color attachment.
+        // Flushes the color attachment writes.
         .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
-        // Não há nada neste buffer esperando esta barreira terminar.
-        // Equivalente a eBottomOfPipe.
+        // Nothing in this buffer waits for this barrier to finish.
+        // Equivalent to eBottomOfPipe.
         .dst_stage_mask(vk::PipelineStageFlags2::empty())
-        // Nada a tornar disponível.
+        // Nothing to make available.
         .dst_access_mask(vk::AccessFlags2::empty())
         .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)

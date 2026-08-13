@@ -1,14 +1,16 @@
-//! Equivalente a modules/engine/src/vertex.h.
+//! Equivalent to modules/engine/src/vertex.h.
 //!
-//! TODO (herdado do C++): desamarrar do Vulkan.
+//! TODO (inherited from C++): decouple from Vulkan.
 
+use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
-// repr(C) é obrigatório: o layout precisa casar com o que as
-// VertexInputAttributeDescriptions descrevem. Sem isso o Rust pode reordenar
-// os campos.
+// repr(C) is required: the layout must match what the
+// VertexInputAttributeDescriptions describe — without it Rust may reorder the
+// fields. `Pod` also proves there is no padding, so a `&[Vertex]` can be
+// reinterpreted as bytes for the upload.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct Vertex {
     pub position: Vec3,
     pub color: Vec3,

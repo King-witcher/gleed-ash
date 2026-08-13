@@ -1,45 +1,48 @@
-//! Não tem equivalente no C++: lá o `vulkan_raii.hpp` lançava `vk::SystemError`
-//! sozinho a cada chamada que falhasse, ninguém capturava, e o erro subia até
-//! terminar o processo. As bindings são 1:1 com a API C e não lançam nada — toda
-//! chamada devolve `VkResult<T>`, então a escolha passa a ser explícita.
+//! No C++ equivalent: there `vulkan_raii.hpp` threw `vk::SystemError` on its
+//! own for every failing call, nobody caught it, and the error climbed until
+//! the process died. The bindings are 1:1 with the C API and throw nothing —
+//! every call returns `VkResult<T>`, so the choice becomes explicit.
 //!
-//! A regra usada no engine inteiro é a mesma dos dois lados:
+//! The whole engine uses the same rule on both sides:
 //!
-//! - **Erro de ambiente** — não há GPU compatível, a SDL não abriu a janela, o
-//!   driver ficou sem memória, o device foi perdido. Vira um [`Error`] e sobe
-//!   com `?` até a `main`, que imprime a cadeia e sai com código de erro.
-//! - **Bug nosso** — mapear um buffer alocado em VRAM pura, descartar um
-//!   `RenderPass` sem submeter, embutir um SPIR-V inválido no binário.
-//!   Continua sendo `panic!`/`expect`: não há nada que o chamador possa fazer,
-//!   e a stack trace no ponto do erro vale mais do que um `Result`.
+//! - **Environment error** — no compatible GPU, SDL could not open the window,
+//!   the driver ran out of memory, the device was lost. Becomes an [`Error`]
+//!   and rises with `?` up to `main`, which prints the chain and exits with an
+//!   error code.
+//! - **Our bug** — mapping a buffer allocated in pure VRAM, dropping a
+//!   `Frame` without submitting, embedding invalid SPIR-V in the binary.
+//!   Stays `panic!`/`expect`: there is nothing the caller can do, and a stack
+//!   trace at the point of failure is worth more than a `Result`.
 //!
-//! O [`Context`] existe para não jogar fora a informação que os
-//! `expect("Failed to create command pool")` originais carregavam:
-//! `.context("criar command pool")?` propaga o erro E diz qual chamada falhou.
+//! [`Context`] exists so the information the original
+//! `expect("Failed to create command pool")` carried is not thrown away:
+//! `.context("create the command pool")?` propagates the error AND says which call
+//! failed.
 
 use std::fmt;
 
 use gpu_allocator::AllocationError;
 
-/// Mesmo padrão de `io::Result`: o alias esconde o tipo de erro, que é sempre
-/// o mesmo em toda a crate.
+/// Same pattern as `io::Result`: the alias hides the error type, which is the
+/// same across the whole crate.
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    /// Uma chamada Vulkan devolveu um `VkResult` de erro.
+    /// A Vulkan call returned an error `VkResult`.
     Vulkan {
         op: &'static str,
         result: vk::Result,
     },
-    /// A `gpu-allocator` não conseguiu sub-alocar `VkDeviceMemory`.
+    /// `gpu-allocator` could not sub-allocate `VkDeviceMemory`.
     Allocation {
         op: &'static str,
         source: AllocationError,
     },
-    /// A SDL falhou: init, subsistema de vídeo, janela, event pump ou surface.
+    /// SDL failed: init, video subsystem, window, event pump or surface.
     Sdl { op: &'static str, message: String },
-    /// A máquina tem Vulkan, mas não atende a algum requisito deste engine.
+    /// The machine has Vulkan, but does not meet one of this engine's
+    /// requirements.
     Unsupported(String),
 }
 
@@ -61,8 +64,8 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {
-    /// Permite que a `main` caminhe pela cadeia (`source()`) e imprima a causa
-    /// original junto do contexto de cada nível.
+    /// Lets `main` walk the chain (`source()`) and print the original cause
+    /// along with each level's context.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Vulkan { result, .. } => Some(result),
@@ -72,11 +75,12 @@ impl std::error::Error for Error {
     }
 }
 
-/// Converte o erro de uma biblioteca em [`Error`], anexando o nome da operação.
+/// Converts a library error into [`Error`], attaching the operation name.
 ///
-/// É o que um `impl From<E> for Error` não conseguiria fazer: o `From` teria de
-/// escolher um texto fixo por tipo de erro, e aqui o texto vem do ponto exato
-/// da chamada. Em troca, `?` sozinho não basta — é sempre `.context(..)?`.
+/// This is what an `impl From<E> for Error` could not do: `From` would have to
+/// pick one fixed text per error type, while here the text comes from the
+/// exact call site. In exchange, `?` alone is not enough — it is always
+/// `.context(..)?`.
 pub trait IntoError {
     fn into_error(self, op: &'static str) -> Error;
 }
@@ -93,8 +97,8 @@ impl IntoError for AllocationError {
     }
 }
 
-// A SDL tem dois tipos de erro (o genérico e o do builder de janela) e ambos só
-// carregam texto, então os dois desembocam na mesma variante.
+// SDL has two error types (the generic one and the window builder's), both
+// carrying only text, so they land in the same variant.
 impl IntoError for sdl3::Error {
     fn into_error(self, op: &'static str) -> Error {
         Error::Sdl {
@@ -113,9 +117,9 @@ impl IntoError for sdl3::video::WindowBuildError {
     }
 }
 
-/// Substitui o `.expect("Failed to create command pool")` por
-/// `.context("criar command pool")?`: mesma mensagem, só que o erro sobe em vez
-/// de matar o processo no lugar.
+/// Replaces `.expect("Failed to create command pool")` with
+/// `.context("create the command pool")?`: same message, except the error rises
+/// instead of killing the process on the spot.
 pub trait Context<T> {
     fn context(self, op: &'static str) -> Result<T>;
 }

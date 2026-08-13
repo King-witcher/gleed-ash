@@ -1,14 +1,15 @@
 use super::uniform::UniformBufferObject;
 use super::MAX_FRAMES_IN_FLIGHT;
-use crate::allocator::{AllocMode, Allocator, Buffer};
 use crate::device::Device;
+use crate::memory::{Allocator, Buffer, HostVisible};
 use crate::prelude::*;
 
 pub(super) struct FrameInFlight {
-    pub(super) ubo: Buffer,
-    /// Um command pool por frame in flight: resetar o pool inteiro por frame é
-    /// mais barato do que resetar buffer a buffer. O buffer carrega um clone do
-    /// pool, então guardar os dois aqui não impõe ordem nenhuma entre eles.
+    pub(super) ubo: Buffer<HostVisible>,
+    /// One command pool per frame in flight: resetting the whole pool per
+    /// frame is cheaper than resetting buffer by buffer. The buffer carries a
+    /// clone of the pool, so holding both here imposes no ordering between
+    /// them.
     pub(super) command_buffer: vk::raii::CommandBuffer,
     pub(super) command_pool: vk::raii::CommandPool,
     pub(super) descriptor_set: vk::DescriptorSet,
@@ -26,12 +27,12 @@ impl FrameInFlight {
         let ubo = make_ubo(allocator)?;
         let command_pool = make_command_pool(device)?;
         let command_buffer = unsafe { command_pool.allocate_one(vk::CommandBufferLevel::PRIMARY) }
-            .context("allocate command buffer")?;
+            .context("allocate the command buffer")?;
         let descriptor_set = make_descriptor_set(device, descriptor_pool, layout)?;
 
-        // Aponta o descriptor set deste frame para o seu próprio UBO. O buffer é
-        // persistente, então esse binding é escrito uma vez e só o conteúdo muda
-        // por frame — não é preciso reescrever o descriptor set todo frame.
+        // Points this frame's descriptor set at its own UBO. The buffer is
+        // persistent, so this binding is written once and only the contents
+        // change per frame — no need to rewrite the descriptor set every frame.
         let buffer_infos = [vk::DescriptorBufferInfo::default()
             .buffer(ubo.vk_buffer())
             .offset(0)
@@ -44,7 +45,7 @@ impl FrameInFlight {
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .buffer_info(&buffer_infos)];
 
-        // O set acabou de ser alocado: nenhum command buffer pendente o usa.
+        // The set was just allocated: no pending command buffer uses it.
         unsafe { device.raw().update_descriptor_sets(&writes, &[]) };
 
         Ok(Self {
@@ -59,15 +60,15 @@ impl FrameInFlight {
 }
 
 fn make_command_pool(device: &Device) -> Result<vk::raii::CommandPool> {
-    // Sem RESET_COMMAND_BUFFER: o pool inteiro é resetado no início de cada
-    // frame, que é o caminho mais barato e dispensa a flag.
+    // No RESET_COMMAND_BUFFER: the whole pool is reset at the start of each
+    // frame, which is the cheapest path and makes the flag unnecessary.
     let info = vk::CommandPoolCreateInfo::default().queue_family_index(device.graphics_index());
 
-    device.create_command_pool(&info)
+    unsafe { device.vk().create_command_pool(&info) }.context("create the command pool")
 }
 
 pub(super) fn make_descriptor_pool(device: &Device) -> Result<vk::raii::DescriptorPool> {
-    // Um descriptor de uniform buffer por frame in flight.
+    // One uniform buffer descriptor per frame in flight.
     let pool_sizes = [vk::DescriptorPoolSize::default()
         .ty(vk::DescriptorType::UNIFORM_BUFFER)
         .descriptor_count(MAX_FRAMES_IN_FLIGHT as u32)];
@@ -76,17 +77,17 @@ pub(super) fn make_descriptor_pool(device: &Device) -> Result<vk::raii::Descript
         .pool_sizes(&pool_sizes)
         .max_sets(MAX_FRAMES_IN_FLIGHT as u32);
 
-    unsafe { device.vk().create_descriptor_pool(&info) }.context("create descriptor pool")
+    unsafe { device.vk().create_descriptor_pool(&info) }.context("create the descriptor pool")
 }
 
-fn make_ubo(allocator: &Allocator) -> Result<Buffer> {
+fn make_ubo(allocator: &Allocator) -> Result<Buffer<HostVisible>> {
     let info = vk::BufferCreateInfo::default()
         .size(std::mem::size_of::<UniformBufferObject>() as u64)
         .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-    // HostVisible: a CPU reescreve as transformações todo frame.
-    allocator.allocate(&info, AllocMode::HostVisible)
+    // HostVisible: the CPU rewrites the transforms every frame.
+    allocator.allocate(&info)
 }
 
 fn make_descriptor_set(
@@ -99,9 +100,9 @@ fn make_descriptor_set(
         .descriptor_pool(pool.handle())
         .set_layouts(&set_layouts);
 
-    // O pool é usado só daqui, na construção dos frames in flight.
-    let sets =
-        unsafe { device.raw().allocate_descriptor_sets(&info) }.context("allocate descriptor set")?;
+    // The pool is only used from here, while building the frames in flight.
+    let sets = unsafe { device.raw().allocate_descriptor_sets(&info) }
+        .context("allocate the descriptor set")?;
 
     Ok(sets[0])
 }
