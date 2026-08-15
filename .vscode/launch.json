@@ -11,7 +11,7 @@
       }
     },
     {
-      "name": "Debug",
+      "name": "Release",
       "type": "lldb",
       "request": "launch",
       "cargo": {

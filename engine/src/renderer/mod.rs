@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use crate::device::Device;
 use crate::memory::Allocator;
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use crate::swapchain::Swapchain;
 use commands::{begin_rendering, transition_rendering};
 use frame::MustSubmit;

@@ -13,7 +13,7 @@ use sdl3::keyboard::Scancode;
 use sdl3::mouse::MouseButton;
 use sdl3::EventPump;
 
-use crate::prelude::*;
+use crate::internal_prelude::*;
 
 #[derive(Clone, Copy, Default)]
 pub struct MouseVector {

@@ -1,13 +1,12 @@
 //! The geometry data model, from the single vertex up to the buffers in VRAM.
 //! Equivalent to modules/engine/src/mesh.{h,cc} + vertex.h.
 
-pub mod geometry;
 mod vertex;
 
 pub use vertex::Vertex;
 
+use crate::internal_prelude::*;
 use crate::memory::{Buffer, DeviceLocal, TransferContext};
-use crate::prelude::*;
 
 /// The CPU side of a mesh: plain data, no GPU resource involved. Produced by
 /// the pure generators in [`geometry`] and consumed by [`Mesh::new`].

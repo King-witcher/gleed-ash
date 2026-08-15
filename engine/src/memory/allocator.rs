@@ -10,7 +10,7 @@ use gpu_allocator::vulkan::{
 
 use super::buffer::{AllocMode, Buffer};
 use crate::device::Device;
-use crate::prelude::*;
+use crate::internal_prelude::*;
 
 struct AllocatorInner {
     device: Device,

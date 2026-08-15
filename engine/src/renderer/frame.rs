@@ -9,7 +9,7 @@ use super::pipeline::Pipeline;
 use super::uniform::UniformBufferObject;
 use crate::memory::{Buffer, HostVisible};
 use crate::mesh::Mesh;
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use crate::swapchain::{Swapchain, SwapchainImage};
 
 /// A dropped frame leaves the fence reset but never submitted, so the next

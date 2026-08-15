@@ -3,8 +3,8 @@
 use std::io::Cursor;
 
 use crate::device::Device;
+use crate::internal_prelude::*;
 use crate::mesh::Vertex;
-use crate::prelude::*;
 
 /// The SPIR-V is embedded in the executable. build.rs compiles
 /// `shaders/mesh.slang` before every build, and `include_bytes!` resolves the

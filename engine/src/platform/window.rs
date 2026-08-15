@@ -10,7 +10,7 @@ use std::ffi::CString;
 use sdl3::video::{Window as SdlWindow, WindowFlags, WindowPos};
 use sdl3::{Sdl, VideoSubsystem};
 
-use crate::prelude::*;
+use crate::internal_prelude::*;
 
 pub struct Size {
     pub width: u32,

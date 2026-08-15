@@ -8,7 +8,7 @@
 //! semaphores is still the `Swapchain`.
 
 use crate::device::Device;
-use crate::prelude::*;
+use crate::internal_prelude::*;
 
 /// Raw handles of one swapchain image, copyable because they are only opaque
 /// integers. The real owner is the matching [`ImageResources`].

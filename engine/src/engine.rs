@@ -13,7 +13,7 @@ use crate::device::{Device, API_VERSION_1_4};
 use crate::memory::{Allocator, TransferContext};
 use crate::mesh::{Mesh, MeshData};
 use crate::platform::{Input, Window};
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use crate::renderer::Renderer;
 use crate::swapchain::Swapchain;
 

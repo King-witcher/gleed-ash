@@ -5,7 +5,7 @@ use bytemuck::Pod;
 use super::buffer::{Buffer, DeviceLocal, HostVisible};
 use super::Allocator;
 use crate::device::Device;
-use crate::prelude::*;
+use crate::internal_prelude::*;
 
 pub struct TransferContext {
     allocator: Allocator,

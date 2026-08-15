@@ -1,9 +1,10 @@
 //! CPU-side mesh generators. Everything here is pure geometry: no GPU, no
 //! `Result` — just parameters in, [`MeshData`] out.
 
-use glam::Vec3;
-
-use super::{MeshData, Vertex};
+use engine::{
+    glam::prelude::*,
+    mesh::{MeshData, Vertex},
+};
 
 /// Axis-aligned cube, one flat color per face.
 ///

@@ -2,7 +2,7 @@ use super::uniform::UniformBufferObject;
 use super::MAX_FRAMES_IN_FLIGHT;
 use crate::device::Device;
 use crate::memory::{Allocator, Buffer, HostVisible};
-use crate::prelude::*;
+use crate::internal_prelude::*;
 
 pub(super) struct FrameInFlight {
     pub(super) ubo: Buffer<HostVisible>,

@@ -13,7 +13,7 @@
 
 use std::ffi::CStr;
 
-use crate::prelude::*;
+use crate::internal_prelude::*;
 
 /// The engine requires Vulkan 1.4. The bindings are generated from the 1.3
 /// headers, so the 1.4 constant does not exist and the version is built by
