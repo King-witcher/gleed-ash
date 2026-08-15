@@ -7,10 +7,12 @@ pub mod mesh;
 mod platform;
 mod renderer;
 mod swapchain;
+pub mod time;
 
-pub use engine::Engine;
+pub use engine::{Engine, FrameContext, RunInfo};
 pub use error::{Context, Error, IntoError, Result};
 pub use glam;
+pub use platform::input;
 
 pub mod prelude {
     pub use crate::error::Context;

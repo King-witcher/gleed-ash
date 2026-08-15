@@ -1,8 +1,8 @@
 mod geometry;
 mod prelude;
 
-use engine::Engine;
 use engine::error::Result;
+use engine::{Engine, FrameContext, RunInfo};
 use prelude::*;
 use std::error::Error;
 use std::process::ExitCode;
@@ -39,10 +39,31 @@ fn run() -> Result<()> {
     // internally, and the farther one is simply drawn first.
     let axis = Vec3::new(0.0, 1.0, 1.0).normalize();
 
-    let meshes = vec![
+    let scene = vec![
         engine.upload_mesh(&geometry::cube(-0.45 * axis, 0.24))?,
         engine.upload_mesh(&geometry::truncated_icosahedron(0.45 * axis, 0.30))?,
     ];
 
-    engine.run(&meshes)
+    let run_info = RunInfo {
+        update: Box::new(update),
+        scene,
+    };
+
+    engine.run(run_info)
+}
+
+/// Orbits the camera around the origin, facing it.
+///
+/// Derived from `elapsed()` instead of accumulated from `delta_time()` because
+/// the engine builds a fresh [`FrameContext`] every frame: nothing written here
+/// survives into the next call.
+fn update(frame: &mut FrameContext) {
+    const RADIANS_PER_SECOND: f32 = 0.6;
+    const DISTANCE: f32 = 2.0;
+
+    let yaw = RADIANS_PER_SECOND * frame.timestep.elapsed().as_secs_f32();
+
+    frame.camera_yaw = yaw;
+    frame.camera_pitch = 0.0;
+    frame.camera_pos = DISTANCE * Vec3::new(yaw.sin(), 0.0, yaw.cos());
 }

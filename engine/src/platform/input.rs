@@ -52,7 +52,7 @@ impl Input {
         })
     }
 
-    pub fn update(&mut self) {
+    pub(crate) fn poll(&mut self) {
         // NOTE: as in C++, the `*_pressed` sets are NOT cleared here — only in
         // `clear()`. That is, `was_key_pressed` stays true until someone calls
         // `clear()`. To mean "pressed this frame", clearing both at the top of
@@ -130,10 +130,10 @@ impl Input {
         self.mouse_delta
     }
 
-    pub fn clear(&mut self) {
-        self.keys_down.clear();
-        self.keys_pressed.clear();
-        self.mouse_buttons_down.clear();
-        self.mouse_buttons_pressed.clear();
-    }
+    // pub fn clear(&mut self) {
+    //     self.keys_down.clear();
+    //     self.keys_pressed.clear();
+    //     self.mouse_buttons_down.clear();
+    //     self.mouse_buttons_pressed.clear();
+    // }
 }

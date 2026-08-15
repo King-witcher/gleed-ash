@@ -4,7 +4,7 @@
 //! Same role the `vk` crate plays for Vulkan, on the other side: this is the
 //! workspace's single door to SDL3, so no other module imports `sdl3`.
 
-mod input;
+pub mod input;
 mod window;
 
 // `MouseVector` and `Size` are returned by methods that mirror the C++ API and

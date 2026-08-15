@@ -9,13 +9,17 @@
 
 use std::ffi::{c_char, CString};
 
+use bytemuck::Zeroable;
+use glam::Vec3;
+
 use crate::device::{Device, API_VERSION_1_4};
+use crate::internal_prelude::*;
 use crate::memory::{Allocator, TransferContext};
 use crate::mesh::{Mesh, MeshData};
 use crate::platform::{Input, Window};
-use crate::internal_prelude::*;
 use crate::renderer::Renderer;
 use crate::swapchain::Swapchain;
+use crate::time::{Clock, Duration, TimeStep};
 
 pub struct Engine {
     // FIELD ORDER IS DESTRUCTION ORDER. Everything that uses the device comes
@@ -29,6 +33,19 @@ pub struct Engine {
     device: Device,
     input: Input,
     window: Window,
+}
+
+pub struct FrameContext<'a> {
+    pub camera_pos: Vec3,
+    pub camera_yaw: f32,
+    pub camera_pitch: f32,
+    pub input: &'a Input,
+    pub timestep: TimeStep,
+}
+
+pub struct RunInfo {
+    pub update: Box<dyn FnMut(&mut FrameContext)>,
+    pub scene: Vec<Mesh>,
 }
 
 impl Engine {
@@ -69,13 +86,31 @@ impl Engine {
         Mesh::new(&mut self.transfer, data)
     }
 
-    pub fn run(&mut self, meshes: &[Mesh]) -> Result<()> {
+    pub fn run(&mut self, mut run_info: RunInfo) -> Result<()> {
+        let mut clock = Clock::new(Duration::from_hz(40));
         loop {
-            self.draw(meshes)?;
-            self.input.update();
+            self.draw(&run_info.scene)?;
+            self.input.poll();
             if self.input.should_quit() {
                 break;
             }
+
+            clock.advance();
+            let timestep = clock.frame();
+
+            let mut frame_context = FrameContext {
+                camera_pos: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                camera_yaw: 0.0,
+                camera_pitch: 0.0,
+                input: &self.input,
+                timestep,
+            };
+
+            (run_info.update)(&mut frame_context);
         }
 
         self.device.wait_idle()?;
