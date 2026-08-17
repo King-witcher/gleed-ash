@@ -15,7 +15,7 @@ vk = { path = "../vk" }
 # the three is what makes the types match without casts. Bumping one without
 # the others breaks that.
 # `build-from-source`: builds SDL3 alongside, like CMake's FetchContent.
-sdl3 = { version = "0.18", features = ["ash", "build-from-source"] }
+sdl3 = { version = "0.18", features = ["ash"] }
 
 # Replaces GLM. `perspective_rh` already uses 0..1 depth (which in C++ required
 # GLM_FORCE_DEPTH_ZERO_TO_ONE). `bytemuck`: Pod impls for the math types, so
@@ -30,3 +30,7 @@ gpu-allocator = { version = "0.28", features = ["vulkan"] }
 # C++ did with reinterpret_cast, with the no-padding invariant checked at
 # compile time.
 bytemuck = { version = "1", features = ["derive"] }
+
+# Derives `Display` and `source()` for `Error`. Only that: the conversion into
+# `Error` stays with `IntoError`/`Context`, which `#[from]` could not express.
+thiserror = "2"

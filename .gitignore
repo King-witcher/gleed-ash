@@ -2,3 +2,5 @@
 target/
 ignore.*
 gitignore/
+SDL3.lib
+SDL3.pdb

@@ -11,5 +11,5 @@ O projeto é organizado como um workspace monorepo.
 
 # Diretrizes
 
-- Evite colocar comentários em tudo; no máximo documentação breve.
+- Evite comentários excessivos ou justificativas em código autoexplicativo. Comente apenas quando não for óbvio.
 - Documentação e comentários devem escritos em inglês, e apenas onde necessário.

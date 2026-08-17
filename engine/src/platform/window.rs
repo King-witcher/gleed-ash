@@ -59,9 +59,6 @@ impl Window {
             .context("create the Vulkan surface")
     }
 
-    /// Instance extensions SDL requires in order to create the surface. The
-    /// C++ returned a `span<const char*>` pointing into SDL memory; here we
-    /// copy into `CString`s to not depend on its lifetime.
     pub fn required_vulkan_extensions(&self) -> Result<Vec<CString>> {
         let names = self
             .window
