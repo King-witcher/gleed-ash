@@ -9,11 +9,14 @@
 use std::collections::HashSet;
 
 use sdl3::event::{Event, WindowEvent};
-use sdl3::keyboard::Scancode;
-use sdl3::mouse::MouseButton;
 use sdl3::EventPump;
 
 use crate::internal_prelude::*;
+
+// The keys and buttons the queries below take. Reexported because SDL stops
+// here: the game names them through `engine`, never through `sdl3`.
+pub use sdl3::keyboard::Scancode;
+pub use sdl3::mouse::MouseButton;
 
 #[derive(Clone, Copy, Default)]
 pub struct MouseVector {

@@ -48,13 +48,8 @@ pub struct Frame<'a> {
 
 impl Frame<'_> {
     pub fn set_camera(&mut self, camera: &Camera) {
-        let time = self.start_time.elapsed().as_secs_f32();
-
         let transforms = Transforms {
-            model: Mat4::from_axis_angle(
-                Vec3::new(0.0, 1.0, 1.0).normalize(),
-                time * 90.0f32.to_radians(),
-            ),
+            model: Mat4::from_axis_angle(Vec3::new(0.0, 1.0, 1.0).normalize(), 0.0),
             camera: camera.matrix(),
         };
 
@@ -62,35 +57,6 @@ impl Frame<'_> {
     }
 
     pub fn draw_scene(&mut self, scene: &[Mesh]) {
-        // // Seconds since the first frame — drives the spin. begin_frame already
-        // // waited on this frame's fence, so overwriting the UBO here cannot
-        // // race the GPU.
-        // let time = self.start_time.elapsed().as_secs_f32();
-
-        // let aspect = extent.width as f32 / extent.height as f32;
-
-        // // Spins 90°/s around the (0,1,1) axis. glm normalized the axis
-        // // internally; glam requires an already normalized one.
-        // let transforms = Transforms {
-        //     model: Mat4::from_axis_angle(
-        //         Vec3::new(0.0, 1.0, 1.0).normalize(),
-        //         time * 90.0f32.to_radians(),
-        //     ),
-        //     view: look_at_mat4(
-        //         Vec3::new(0.0, 0.0, 2.0),
-        //         Vec3::new(0.0, 0.0, 0.0),
-        //         Vec3::new(0.0, 1.0, 0.0),
-        //     ),
-        //     // This projection already comes out with 0..1 depth AND Y pointing
-        //     // down — i.e. it embeds both fixes the C++ did by hand:
-        //     // GLM_FORCE_DEPTH_ZERO_TO_ONE and `proj[1][1] *= -1`. The
-        //     // resulting matrix is the same (and it is why the pipeline uses
-        //     // CCW front faces).
-        //     proj: vulkan_perspective(45.0f32.to_radians(), aspect, 0.1, 10.0),
-        // };
-
-        // self.transforms_buffer.map_copy_value(&transforms);
-
         // The command buffer has been recording since begin_frame, and the
         // pipeline, descriptor set and mesh buffers outlive this frame.
         unsafe {

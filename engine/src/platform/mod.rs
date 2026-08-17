@@ -11,6 +11,6 @@ mod window;
 // have no caller in this demo yet — the same reason as the crate-level
 // `allow(dead_code)`.
 #[allow(unused_imports)]
-pub use input::{Input, MouseVector};
+pub use input::{Input, MouseButton, MouseVector, Scancode};
 #[allow(unused_imports)]
 pub use window::{Size, Window};

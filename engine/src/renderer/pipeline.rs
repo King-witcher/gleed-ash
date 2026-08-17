@@ -6,12 +6,6 @@ use crate::device::Device;
 use crate::internal_prelude::*;
 use crate::mesh::Vertex;
 
-/// The SPIR-V is embedded in the executable. build.rs compiles
-/// `shaders/mesh.slang` before every build, and `include_bytes!` resolves the
-/// path relative to THIS file — so a wrong path becomes a compile error, not a
-/// runtime failure, and the binary no longer depends on anything on disk. The
-/// C++ read the .spv at startup and therefore depended on the CWD being the
-/// project root.
 const SHADER_SPV: &[u8] = include_bytes!("../shaders/mesh.spv");
 
 pub(super) struct Pipeline {

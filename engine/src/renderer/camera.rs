@@ -11,7 +11,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new(fov: f32, position: Vec3, yaw: f32, pitch: f32, aspect: f32) -> Self {
+    pub(crate) fn new(fov: f32, position: Vec3, yaw: f32, pitch: f32, aspect: f32) -> Self {
         Self {
             projection: projection(fov, aspect),
             fov,
@@ -22,7 +22,7 @@ impl Camera {
         }
     }
 
-    pub fn matrix(&self) -> Mat4 {
+    pub(crate) fn matrix(&self) -> Mat4 {
         let translation = Mat4::from_translation(-self.position);
         let yaw = Mat4::from_rotation_y(self.yaw.to_radians());
         let pitch = Mat4::from_rotation_x(-self.pitch.to_radians());
@@ -32,6 +32,13 @@ impl Camera {
 
     pub fn position(&self) -> Vec3 {
         self.position
+    }
+
+    pub fn direction(&self) -> Vec3 {
+        let (sin_yaw, cos_yaw) = self.yaw.to_radians().sin_cos();
+        let (sin_pitch, cos_pitch) = self.pitch.to_radians().sin_cos();
+
+        Vec3::new(cos_pitch * sin_yaw, sin_pitch, -cos_pitch * cos_yaw)
     }
 
     pub fn yaw(&self) -> f32 {
@@ -47,14 +54,14 @@ impl Camera {
     }
 
     pub fn set_yaw(&mut self, value: f32) {
-        self.yaw = value;
+        self.yaw = value % 360.0;
     }
 
     pub fn set_pitch(&mut self, value: f32) {
-        self.pitch = value;
+        self.pitch = value.clamp(-90.0, 90.0);
     }
 
-    pub fn set_aspect(&mut self, value: f32) {
+    pub(crate) fn set_aspect(&mut self, value: f32) {
         if value != self.aspect {
             self.aspect = value;
             self.projection = projection(self.fov, value);

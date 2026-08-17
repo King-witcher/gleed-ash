@@ -35,9 +35,7 @@ pub struct Engine {
 }
 
 pub struct FrameContext<'a> {
-    pub camera_pos: Vec3,
-    pub camera_yaw: f32,
-    pub camera_pitch: f32,
+    pub camera: &'a mut Camera,
     pub input: &'a Input,
     pub timestep: TimeStep,
 }
@@ -111,18 +109,13 @@ impl Engine {
             // current state, writes the state it wants, and it is applied
             // before drawing.
             let mut frame_context = FrameContext {
-                camera_pos: camera.position(),
-                camera_yaw: camera.yaw(),
-                camera_pitch: camera.pitch(),
+                camera: &mut camera,
                 input: &self.input,
                 timestep: clock.frame(),
             };
 
             (run_info.update)(&mut frame_context);
 
-            camera.set_position(frame_context.camera_pos);
-            camera.set_yaw(frame_context.camera_yaw);
-            camera.set_pitch(frame_context.camera_pitch);
             camera.set_aspect(aspect_ratio(self.swapchain.extent()));
 
             self.draw(&camera, &run_info.scene)?;
