@@ -73,7 +73,55 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn new(sdl: &sdl3::Sdl) -> Result<Self> {
+    pub fn is_key_down(&self, scancode: Scancode) -> bool {
+        self.keys_down.contains(scancode as usize)
+    }
+
+    pub fn was_key_pressed(&self, scancode: Scancode) -> bool {
+        self.keys_pressed.contains(scancode as usize)
+    }
+
+    pub fn was_key_released(&self, scancode: Scancode) -> bool {
+        self.keys_released.contains(scancode as usize)
+    }
+
+    pub fn is_mouse_btn_down(&self, button: MouseButton) -> bool {
+        self.mouse_buttons_down.contains(button as usize)
+    }
+
+    pub fn was_mouse_btn_pressed(&self, button: MouseButton) -> bool {
+        self.mouse_buttons_pressed.contains(button as usize)
+    }
+
+    pub fn was_mouse_btn_released(&self, button: MouseButton) -> bool {
+        self.mouse_buttons_released.contains(button as usize)
+    }
+
+    pub fn minimized(&self) -> bool {
+        self.minimized
+    }
+
+    pub fn should_quit(&self) -> bool {
+        self.should_quit
+    }
+
+    pub fn mouse_absolute(&self) -> MouseVector {
+        self.mouse_absolute
+    }
+
+    pub fn mouse_delta(&self) -> MouseVector {
+        self.mouse_delta
+    }
+
+    fn clear(&mut self) {
+        self.keys_pressed.clear();
+        self.keys_released.clear();
+        self.mouse_buttons_pressed.clear();
+        self.mouse_buttons_released.clear();
+        self.mouse_delta = MouseVector::default();
+    }
+
+    pub(crate) fn new(sdl: &sdl3::Sdl) -> Result<Self> {
         Ok(Self {
             event_pump: sdl.event_pump().context("create the SDL event pump")?,
             keys_down: Keys::new(),
@@ -90,11 +138,7 @@ impl Input {
     }
 
     pub(crate) fn poll(&mut self) {
-        self.keys_pressed.clear();
-        self.keys_released.clear();
-        self.mouse_buttons_pressed.clear();
-        self.mouse_buttons_released.clear();
-        self.mouse_delta = MouseVector::default();
+        self.clear();
 
         for event in self.event_pump.poll_iter() {
             match event {
@@ -103,9 +147,12 @@ impl Input {
                     repeat,
                     ..
                 } => {
-                    self.keys_down.insert(scancode as usize);
                     if !repeat {
+                        self.keys_down.insert(scancode as usize);
                         self.keys_pressed.insert(scancode as usize);
+                        if scancode == Scancode::Escape {
+                            self.should_quit = true;
+                        }
                     }
                 }
                 Event::KeyUp {
@@ -147,45 +194,5 @@ impl Input {
                 _ => {}
             }
         }
-    }
-
-    pub fn is_key_down(&self, scancode: Scancode) -> bool {
-        self.keys_down.contains(scancode as usize)
-    }
-
-    pub fn was_key_pressed(&self, scancode: Scancode) -> bool {
-        self.keys_pressed.contains(scancode as usize)
-    }
-
-    pub fn was_key_released(&self, scancode: Scancode) -> bool {
-        self.keys_released.contains(scancode as usize)
-    }
-
-    pub fn is_mouse_btn_down(&self, button: MouseButton) -> bool {
-        self.mouse_buttons_down.contains(button as usize)
-    }
-
-    pub fn was_mouse_btn_pressed(&self, button: MouseButton) -> bool {
-        self.mouse_buttons_pressed.contains(button as usize)
-    }
-
-    pub fn was_mouse_btn_released(&self, button: MouseButton) -> bool {
-        self.mouse_buttons_released.contains(button as usize)
-    }
-
-    pub fn minimized(&self) -> bool {
-        self.minimized
-    }
-
-    pub fn should_quit(&self) -> bool {
-        self.should_quit
-    }
-
-    pub fn mouse_absolute(&self) -> MouseVector {
-        self.mouse_absolute
-    }
-
-    pub fn mouse_delta(&self) -> MouseVector {
-        self.mouse_delta
     }
 }
