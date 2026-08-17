@@ -1,20 +1,8 @@
-//! Equivalent to modules/engine/src/input.{h,cc}.
-//!
-//! Same state machine as C++: `update()` drains the SDL event queue and
-//! updates the sets queried by `is_key_down` / `was_key_pressed`.
-//!
-//! Representation difference: C++ used a `bool keysDown[512]` indexed by
-//! scancode; here `Scancode` is an enum, so we use `HashSet`. Same semantics.
-
-use std::collections::HashSet;
-
 use sdl3::event::{Event, WindowEvent};
 use sdl3::EventPump;
 
 use crate::internal_prelude::*;
 
-// The keys and buttons the queries below take. Reexported because SDL stops
-// here: the game names them through `engine`, never through `sdl3`.
 pub use sdl3::keyboard::Scancode;
 pub use sdl3::mouse::MouseButton;
 
@@ -24,14 +12,58 @@ pub struct MouseVector {
     pub y: f32,
 }
 
+#[derive(Clone, Copy)]
+struct BitSet<const WORDS: usize>([u64; WORDS]);
+
+impl<const WORDS: usize> BitSet<WORDS> {
+    fn new() -> Self {
+        Self([0; WORDS])
+    }
+
+    fn word_and_bit(index: usize) -> (usize, u64) {
+        (index >> 6, 1 << (index & 0x3f))
+    }
+
+    fn insert(&mut self, index: usize) {
+        let (word, bit) = Self::word_and_bit(index);
+        self.0[word] |= bit;
+    }
+
+    fn remove(&mut self, index: usize) {
+        let (word, bit) = Self::word_and_bit(index);
+        self.0[word] &= !bit;
+    }
+
+    fn contains(&self, index: usize) -> bool {
+        let (word, bit) = Self::word_and_bit(index);
+        self.0[word] & bit != 0
+    }
+
+    fn clear(&mut self) {
+        self.0 = [0; WORDS];
+    }
+
+    fn drain_into(&mut self, other: &mut Self) {
+        for (own, other) in self.0.iter_mut().zip(&mut other.0) {
+            *other |= *own;
+            *own = 0;
+        }
+    }
+}
+
+type Keys = BitSet<{ (Scancode::Count as usize).div_ceil(64) }>;
+type MouseButtons = BitSet<{ (MouseButton::X2 as usize).div_ceil(64) }>;
+
 pub struct Input {
     event_pump: EventPump,
 
-    keys_down: HashSet<Scancode>,
-    keys_pressed: HashSet<Scancode>,
+    keys_down: Keys,
+    keys_pressed: Keys,
+    keys_released: Keys,
 
-    mouse_buttons_down: HashSet<MouseButton>,
-    mouse_buttons_pressed: HashSet<MouseButton>,
+    mouse_buttons_down: MouseButtons,
+    mouse_buttons_pressed: MouseButtons,
+    mouse_buttons_released: MouseButtons,
 
     minimized: bool,
     should_quit: bool,
@@ -44,10 +76,12 @@ impl Input {
     pub fn new(sdl: &sdl3::Sdl) -> Result<Self> {
         Ok(Self {
             event_pump: sdl.event_pump().context("create the SDL event pump")?,
-            keys_down: HashSet::new(),
-            keys_pressed: HashSet::new(),
-            mouse_buttons_down: HashSet::new(),
-            mouse_buttons_pressed: HashSet::new(),
+            keys_down: Keys::new(),
+            keys_pressed: Keys::new(),
+            keys_released: Keys::new(),
+            mouse_buttons_down: MouseButtons::new(),
+            mouse_buttons_pressed: MouseButtons::new(),
+            mouse_buttons_released: MouseButtons::new(),
             minimized: false,
             should_quit: false,
             mouse_absolute: MouseVector::default(),
@@ -56,32 +90,38 @@ impl Input {
     }
 
     pub(crate) fn poll(&mut self) {
-        // NOTE: as in C++, the `*_pressed` sets are NOT cleared here — only in
-        // `clear()`. That is, `was_key_pressed` stays true until someone calls
-        // `clear()`. To mean "pressed this frame", clearing both at the top of
-        // this method would do. Kept as is for fidelity.
-        self.mouse_delta = MouseVector { x: 0.0, y: 0.0 };
+        self.keys_pressed.clear();
+        self.keys_released.clear();
+        self.mouse_buttons_pressed.clear();
+        self.mouse_buttons_released.clear();
+        self.mouse_delta = MouseVector::default();
+
         for event in self.event_pump.poll_iter() {
             match event {
                 Event::KeyDown {
                     scancode: Some(scancode),
+                    repeat,
                     ..
                 } => {
-                    self.keys_down.insert(scancode);
-                    self.keys_pressed.insert(scancode);
+                    self.keys_down.insert(scancode as usize);
+                    if !repeat {
+                        self.keys_pressed.insert(scancode as usize);
+                    }
                 }
                 Event::KeyUp {
                     scancode: Some(scancode),
                     ..
                 } => {
-                    self.keys_down.remove(&scancode);
+                    self.keys_down.remove(scancode as usize);
+                    self.keys_released.insert(scancode as usize);
                 }
                 Event::MouseButtonDown { mouse_btn, .. } => {
-                    self.mouse_buttons_down.insert(mouse_btn);
-                    self.mouse_buttons_pressed.insert(mouse_btn);
+                    self.mouse_buttons_down.insert(mouse_btn as usize);
+                    self.mouse_buttons_pressed.insert(mouse_btn as usize);
                 }
                 Event::MouseButtonUp { mouse_btn, .. } => {
-                    self.mouse_buttons_down.remove(&mouse_btn);
+                    self.mouse_buttons_down.remove(mouse_btn as usize);
+                    self.mouse_buttons_released.insert(mouse_btn as usize);
                 }
                 Event::Quit { .. } => {
                     self.should_quit = true;
@@ -96,6 +136,12 @@ impl Input {
                 Event::Window { win_event, .. } => match win_event {
                     WindowEvent::Minimized => self.minimized = true,
                     WindowEvent::Restored => self.minimized = false,
+                    WindowEvent::FocusLost => {
+                        self.keys_down.drain_into(&mut self.keys_released);
+                        self.mouse_buttons_down
+                            .drain_into(&mut self.mouse_buttons_released);
+                        self.mouse_delta = MouseVector::default();
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -104,19 +150,27 @@ impl Input {
     }
 
     pub fn is_key_down(&self, scancode: Scancode) -> bool {
-        self.keys_down.contains(&scancode)
+        self.keys_down.contains(scancode as usize)
     }
 
     pub fn was_key_pressed(&self, scancode: Scancode) -> bool {
-        self.keys_pressed.contains(&scancode)
+        self.keys_pressed.contains(scancode as usize)
+    }
+
+    pub fn was_key_released(&self, scancode: Scancode) -> bool {
+        self.keys_released.contains(scancode as usize)
     }
 
     pub fn is_mouse_btn_down(&self, button: MouseButton) -> bool {
-        self.mouse_buttons_down.contains(&button)
+        self.mouse_buttons_down.contains(button as usize)
     }
 
     pub fn was_mouse_btn_pressed(&self, button: MouseButton) -> bool {
-        self.mouse_buttons_pressed.contains(&button)
+        self.mouse_buttons_pressed.contains(button as usize)
+    }
+
+    pub fn was_mouse_btn_released(&self, button: MouseButton) -> bool {
+        self.mouse_buttons_released.contains(button as usize)
     }
 
     pub fn minimized(&self) -> bool {
@@ -134,11 +188,4 @@ impl Input {
     pub fn mouse_delta(&self) -> MouseVector {
         self.mouse_delta
     }
-
-    // pub fn clear(&mut self) {
-    //     self.keys_down.clear();
-    //     self.keys_pressed.clear();
-    //     self.mouse_buttons_down.clear();
-    //     self.mouse_buttons_pressed.clear();
-    // }
 }

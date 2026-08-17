@@ -11,7 +11,6 @@ written in Slang. The original C++ engine was 100% handwritten.
   adds `raii`, a thin wrapper with automatic drop.
 - `engine`: the engine itself (device, swapchain, renderer, meshes, input).
 - `game`: the executable. Uploads two meshes and moves the camera.
-- `sdl`: SDL wrapper.
 
 ## Requirements
 

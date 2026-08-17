@@ -1,10 +1,3 @@
-//! Equivalent to modules/engine/src/window.{h,cc}.
-//!
-//! Same SDL3 as the C++ engine, through the `sdl3` crate. With the "ash"
-//! feature on, SDL already returns typed handles, and Cargo unifies those
-//! bindings with the ones the `vk` crate reexports — so the types are the same
-//! and there is no cast between SDL's `VkInstance` and ours.
-
 use std::ffi::CString;
 
 use sdl3::video::{Window as SdlWindow, WindowPos};
@@ -18,8 +11,6 @@ pub struct Size {
 }
 
 pub struct Window {
-    // Field order IS destruction order in Rust. The window must die before the
-    // video subsystem, and it before the SDL context.
     window: SdlWindow,
     _video: VideoSubsystem,
     sdl: Sdl,
@@ -31,8 +22,8 @@ impl Window {
         let video = sdl.video().context("initialize the SDL video subsystem")?;
 
         let window = video
-            .window(title, 1920, 1080)
-            .fullscreen()
+            .window(title, 600, 600)
+            // .fullscreen()
             .vulkan()
             .resizable()
             .build()
@@ -45,8 +36,6 @@ impl Window {
         })
     }
 
-    /// Handle to the SDL context — `Input` needs it to open the event pump.
-    /// This did not exist in C++ because SDL_PollEvent is global.
     pub fn sdl(&self) -> &Sdl {
         &self.sdl
     }
@@ -65,8 +54,6 @@ impl Window {
             .vulkan_instance_extensions()
             .context("query the required Vulkan instance extensions")?;
 
-        // A name with an interior NUL would be an SDL bug, not an environment
-        // condition.
         Ok(names
             .into_iter()
             .map(|name| CString::new(name).expect("extension name has an interior NUL"))

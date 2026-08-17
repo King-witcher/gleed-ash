@@ -176,13 +176,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdl"
-version = "0.1.0"
-dependencies = [
- "sdl3",
-]
-
-[[package]]
 name = "sdl3"
 version = "0.18.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
