@@ -1,15 +1,14 @@
 use std::time::Instant;
 
-use glam::camera::rh::proj::vulkan::perspective as vulkan_perspective;
-use glam::camera::rh::view::look_at_mat4;
 use glam::{Mat4, Vec3};
 
 use super::commands::transition_presentation;
 use super::pipeline::Pipeline;
-use super::uniform::UniformBufferObject;
+use super::uniform::Transforms;
+use crate::internal_prelude::*;
 use crate::memory::{Buffer, HostVisible};
 use crate::mesh::Mesh;
-use crate::internal_prelude::*;
+use crate::renderer::Camera;
 use crate::swapchain::{Swapchain, SwapchainImage};
 
 /// A dropped frame leaves the fence reset but never submitted, so the next
@@ -30,12 +29,14 @@ impl Drop for MustSubmit {
 }
 
 /// A frame being recorded. Borrows from the `Renderer` only what it uses, with
-/// the same lifetime: while it exists, the matching frame in flight cannot be
+/// the same lifetime: while it exists, the matching [`FrameSlot`] cannot be
 /// touched by anyone else.
+///
+/// [`FrameSlot`]: super::FrameSlot
 pub struct Frame<'a> {
     pub(super) guard: MustSubmit,
     pub(super) command_buffer: &'a mut vk::raii::CommandBuffer,
-    pub(super) ubo: &'a mut Buffer<HostVisible>,
+    pub(super) transforms_buffer: &'a mut Buffer<HostVisible>,
     pub(super) descriptor_set: vk::DescriptorSet,
     pub(super) image_available: &'a vk::raii::Semaphore,
     pub(super) fence: &'a vk::raii::Fence,
@@ -46,35 +47,49 @@ pub struct Frame<'a> {
 }
 
 impl Frame<'_> {
-    pub fn draw_scene(&mut self, scene: &[Mesh], extent: vk::Extent2D) {
-        // Seconds since the first frame — drives the spin. begin_frame already
-        // waited on this frame's fence, so overwriting the UBO here cannot
-        // race the GPU.
+    pub fn set_camera(&mut self, camera: &Camera) {
         let time = self.start_time.elapsed().as_secs_f32();
 
-        let aspect = extent.width as f32 / extent.height as f32;
-
-        // Spins 90°/s around the (0,1,1) axis. glm normalized the axis
-        // internally; glam requires an already normalized one.
-        let ubo = UniformBufferObject {
+        let transforms = Transforms {
             model: Mat4::from_axis_angle(
                 Vec3::new(0.0, 1.0, 1.0).normalize(),
                 time * 90.0f32.to_radians(),
             ),
-            view: look_at_mat4(
-                Vec3::new(0.0, 0.0, 2.0),
-                Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 0.0),
-            ),
-            // This projection already comes out with 0..1 depth AND Y pointing
-            // down — i.e. it embeds both fixes the C++ did by hand:
-            // GLM_FORCE_DEPTH_ZERO_TO_ONE and `proj[1][1] *= -1`. The
-            // resulting matrix is the same (and it is why the pipeline uses
-            // CCW front faces).
-            proj: vulkan_perspective(45.0f32.to_radians(), aspect, 0.1, 10.0),
+            camera: camera.matrix(),
         };
 
-        self.ubo.map_copy_value(&ubo);
+        self.transforms_buffer.map_copy_value(&transforms);
+    }
+
+    pub fn draw_scene(&mut self, scene: &[Mesh]) {
+        // // Seconds since the first frame — drives the spin. begin_frame already
+        // // waited on this frame's fence, so overwriting the UBO here cannot
+        // // race the GPU.
+        // let time = self.start_time.elapsed().as_secs_f32();
+
+        // let aspect = extent.width as f32 / extent.height as f32;
+
+        // // Spins 90°/s around the (0,1,1) axis. glm normalized the axis
+        // // internally; glam requires an already normalized one.
+        // let transforms = Transforms {
+        //     model: Mat4::from_axis_angle(
+        //         Vec3::new(0.0, 1.0, 1.0).normalize(),
+        //         time * 90.0f32.to_radians(),
+        //     ),
+        //     view: look_at_mat4(
+        //         Vec3::new(0.0, 0.0, 2.0),
+        //         Vec3::new(0.0, 0.0, 0.0),
+        //         Vec3::new(0.0, 1.0, 0.0),
+        //     ),
+        //     // This projection already comes out with 0..1 depth AND Y pointing
+        //     // down — i.e. it embeds both fixes the C++ did by hand:
+        //     // GLM_FORCE_DEPTH_ZERO_TO_ONE and `proj[1][1] *= -1`. The
+        //     // resulting matrix is the same (and it is why the pipeline uses
+        //     // CCW front faces).
+        //     proj: vulkan_perspective(45.0f32.to_radians(), aspect, 0.1, 10.0),
+        // };
+
+        // self.transforms_buffer.map_copy_value(&transforms);
 
         // The command buffer has been recording since begin_frame, and the
         // pipeline, descriptor set and mesh buffers outlive this frame.
@@ -150,9 +165,8 @@ impl Frame<'_> {
             .wait_semaphore_infos(&wait_semaphores)
             .signal_semaphore_infos(&signal_semaphores);
 
-        // The fence was waited on and reset in this same frame in flight's
-        // begin_frame, and the by-value `Frame` guarantees this is its only
-        // submit.
+        // The fence was waited on and reset in this same slot's begin_frame,
+        // and the by-value `Frame` guarantees this is its only submit.
         unsafe { queue.submit2(&[submit_info], fence.handle()) }
             .context("submit to the graphics queue")?;
 

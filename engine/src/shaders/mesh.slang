@@ -1,35 +1,40 @@
 struct VertexInput
 {
-    float3 inPosition;
-    float3 inColor;
-}
+    [[vk::location(0)]]
+    float3 position;
 
-struct UniformBuffer {
-    float4x4 model;
-    float4x4 view;
-    float4x4 proj;
-};
-[[vk::binding(0, 0)]]
-ConstantBuffer<UniformBuffer> ubo;
+    [[vk::location(1)]]
+    float3 color;
+}
 
 struct VertexOutput
 {
+    [[vk::location(0)]]
     float3 color;
-    float4 sv_position : SV_Position;
-};
+    float4 position : SV_Position;
+}
+
+struct Transforms
+{
+    float4x4 model;
+    float4x4 camera;
+}
+
+// [binding, set]
+[[vk::binding(0, 0)]]
+ConstantBuffer<Transforms> transforms;
 
 [shader("vertex")]
 VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
-    output.sv_position = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPosition, 1.0))));
-    output.color = input.inColor;
+    output.position = mul(transforms.camera, mul(transforms.model, float4(input.position, 1.0)));
+    output.color = input.color;
     return output;
 }
 
 [shader("fragment")]
-float4 fragMain(VertexOutput inVert) : SV_Target
+float4 fragMain(VertexOutput vertexOutput) : SV_Target
 {
-    float3 color = inVert.color;
-    return float4(color, 1.0);
+    return float4(vertexOutput.color, 1.0);
 }

@@ -57,6 +57,7 @@ impl Input {
         // `clear()`. That is, `was_key_pressed` stays true until someone calls
         // `clear()`. To mean "pressed this frame", clearing both at the top of
         // this method would do. Kept as is for fidelity.
+        self.mouse_delta = MouseVector { x: 0.0, y: 0.0 };
         for event in self.event_pump.poll_iter() {
             match event {
                 Event::KeyDown {
@@ -86,7 +87,8 @@ impl Input {
                     x, y, xrel, yrel, ..
                 } => {
                     self.mouse_absolute = MouseVector { x, y };
-                    self.mouse_delta = MouseVector { x: xrel, y: yrel };
+                    self.mouse_delta.x += xrel;
+                    self.mouse_delta.y += yrel;
                 }
                 Event::Window { win_event, .. } => match win_event {
                     WindowEvent::Minimized => self.minimized = true,

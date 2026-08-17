@@ -7,7 +7,7 @@
 
 use std::ffi::CString;
 
-use sdl3::video::{Window as SdlWindow, WindowFlags, WindowPos};
+use sdl3::video::{Window as SdlWindow, WindowPos};
 use sdl3::{Sdl, VideoSubsystem};
 
 use crate::internal_prelude::*;
@@ -30,12 +30,9 @@ impl Window {
         let sdl = sdl3::init().context("initialize SDL3")?;
         let video = sdl.video().context("initialize the SDL video subsystem")?;
 
-        // set_flags() overwrites the accumulated flags, so it comes first;
-        // vulkan()/resizable() afterwards only add. Same combination as C++:
-        // SDL_WINDOW_VULKAN | SDL_WINDOW_MOUSE_RELATIVE_MODE | SDL_WINDOW_RESIZABLE.
         let window = video
-            .window(title, 800, 600)
-            .set_flags(WindowFlags::MOUSE_RELATIVE_MODE)
+            .window(title, 1920, 1080)
+            .fullscreen()
             .vulkan()
             .resizable()
             .build()
@@ -77,6 +74,10 @@ impl Window {
             .into_iter()
             .map(|name| CString::new(name).expect("extension name has an interior NUL"))
             .collect())
+    }
+
+    pub fn set_relative_mouse_mode(&mut self, on: bool) {
+        self.sdl.mouse().set_relative_mouse_mode(&self.window, on);
     }
 
     pub fn set_position(&mut self, x: i32, y: i32) {

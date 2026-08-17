@@ -8,42 +8,44 @@
 //! The module's cost rule: **refcount on the coarse hierarchy, borrows while
 //! recording**. Device, command pool, pipeline and buffers are refcounted
 //! once, at creation; the `Frame` only carries references to the parts of the
-//! frame in flight it uses. Recording a frame — including the thousands of
+//! [`FrameSlot`] it uses. Recording a frame — including the thousands of
 //! `cmd_*` — bumps no counter, and the borrow checker is what guarantees
 //! nothing disappears mid-recording.
 
+mod camera;
 mod commands;
 mod frame;
-mod frame_in_flight;
+mod frame_slot;
 mod pipeline;
 mod uniform;
 
 use std::time::Instant;
 
 use crate::device::Device;
-use crate::memory::Allocator;
 use crate::internal_prelude::*;
+use crate::memory::Allocator;
 use crate::swapchain::Swapchain;
 use commands::{begin_rendering, transition_rendering};
 use frame::MustSubmit;
-use frame_in_flight::{make_descriptor_pool, FrameInFlight};
+use frame_slot::{make_descriptor_pool, FrameSlot};
 use pipeline::Pipeline;
 
+pub use camera::Camera;
 pub use frame::Frame;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct Renderer {
-    // FIELD ORDER IS DESTRUCTION ORDER: the frames use descriptor sets from
+    // FIELD ORDER IS DESTRUCTION ORDER: the slots use descriptor sets from
     // the pool below, and destroying the pool releases them — no need for the
     // FREE_DESCRIPTOR_SET the C++ used (there each vk::raii::DescriptorSet
     // freed itself individually).
-    frames: Vec<FrameInFlight>,
+    slots: Vec<FrameSlot>,
     descriptor_pool: vk::raii::DescriptorPool,
     pipeline: Pipeline,
     graphics_queue: vk::raii::Queue,
     device: Device,
-    next_frame: usize,
+    next_slot: usize,
     start_time: Instant,
 }
 
@@ -53,9 +55,9 @@ impl Renderer {
         let pipeline = Pipeline::new(device.clone(), swapchain.image_format())?;
         let descriptor_pool = make_descriptor_pool(&device)?;
 
-        let frames = (0..MAX_FRAMES_IN_FLIGHT)
+        let slots = (0..MAX_FRAMES_IN_FLIGHT)
             .map(|_| {
-                FrameInFlight::new(
+                FrameSlot::new(
                     &device,
                     allocator,
                     &descriptor_pool,
@@ -65,12 +67,12 @@ impl Renderer {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            frames,
+            slots,
             descriptor_pool,
             pipeline,
             graphics_queue,
             device,
-            next_frame: 0,
+            next_slot: 0,
             start_time: Instant::now(),
         })
     }
@@ -80,38 +82,33 @@ impl Renderer {
         // is about to be waited on, so recreating here is safe.
         swapchain.recreate_if_needed()?;
 
-        let frame_index = self.next_frame;
-        self.next_frame = (self.next_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+        let slot_index = self.next_slot;
+        self.next_slot = (self.next_slot + 1) % MAX_FRAMES_IN_FLIGHT;
 
-        // Borrowed before the frame in flight: they are disjoint fields of the
-        // Renderer, so they coexist with the `&mut self.frames` below.
+        // Borrowed before the slot: they are disjoint fields of the Renderer,
+        // so they coexist with the `&mut self.slots` below.
         let start_time = self.start_time;
         let pipeline = &self.pipeline;
         let queue = &self.graphics_queue;
 
-        let frame = &mut self.frames[frame_index];
+        let slot = &mut self.slots[slot_index];
 
-        // The fence is only waited on here and only signaled by this same
-        // frame in flight's submit, so nothing else depends on it at this
-        // point.
         unsafe {
-            frame
-                .fence
+            slot.fence
                 .wait(u64::MAX)
                 .context("wait for the frame fence")?;
-            frame.fence.reset().context("reset the frame fence")?;
+            slot.fence.reset().context("reset the frame fence")?;
         }
 
-        let swapchain_image = swapchain.acquire_next_image(frame.image_available.handle())?;
+        let swapchain_image = swapchain.acquire_next_image(slot.image_available.handle())?;
 
         let extent = swapchain.extent();
-        let command_buffer = &mut frame.command_buffer;
+        let command_buffer = &mut slot.command_buffer;
 
         // The fence above already guaranteed the GPU is done with this pool,
         // and the `&mut self` that nothing else is recording into it.
         unsafe {
-            frame
-                .command_pool
+            slot.command_pool
                 .reset(vk::CommandPoolResetFlags::empty())
                 .context("reset the frame command pool")?;
 
@@ -126,10 +123,10 @@ impl Renderer {
         Ok(Frame {
             guard: MustSubmit,
             command_buffer,
-            ubo: &mut frame.ubo,
-            descriptor_set: frame.descriptor_set,
-            image_available: &frame.image_available,
-            fence: &frame.fence,
+            transforms_buffer: &mut slot.transforms_buffer,
+            descriptor_set: slot.descriptor_set,
+            image_available: &slot.image_available,
+            fence: &slot.fence,
             pipeline,
             queue,
             swapchain_image,

@@ -9,7 +9,6 @@
 
 use std::ffi::{c_char, CString};
 
-use bytemuck::Zeroable;
 use glam::Vec3;
 
 use crate::device::{Device, API_VERSION_1_4};
@@ -17,7 +16,7 @@ use crate::internal_prelude::*;
 use crate::memory::{Allocator, TransferContext};
 use crate::mesh::{Mesh, MeshData};
 use crate::platform::{Input, Window};
-use crate::renderer::Renderer;
+use crate::renderer::{Camera, Renderer};
 use crate::swapchain::Swapchain;
 use crate::time::{Clock, Duration, TimeStep};
 
@@ -50,7 +49,8 @@ pub struct RunInfo {
 
 impl Engine {
     pub fn new(window_title: &str) -> Result<Self> {
-        let window = Window::new(window_title)?;
+        let mut window = Window::new(window_title)?;
+        window.set_relative_mouse_mode(true);
 
         let vulkan = create_instance(&window)?;
 
@@ -88,29 +88,44 @@ impl Engine {
 
     pub fn run(&mut self, mut run_info: RunInfo) -> Result<()> {
         let mut clock = Clock::new(Duration::from_hz(40));
+
+        // +Z: the camera is right-handed and looks down -Z, so this is the
+        // side from which the origin is visible.
+        let mut camera = Camera::new(
+            90.0,
+            Vec3::new(0.0, 0.0, 3.0),
+            0.0,
+            0.0,
+            aspect_ratio(self.swapchain.extent()),
+        );
+
         loop {
-            self.draw(&run_info.scene)?;
             self.input.poll();
             if self.input.should_quit() {
                 break;
             }
 
             clock.advance();
-            let timestep = clock.frame();
 
+            // The context carries the camera in and out: the caller reads the
+            // current state, writes the state it wants, and it is applied
+            // before drawing.
             let mut frame_context = FrameContext {
-                camera_pos: Vec3 {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                camera_yaw: 0.0,
-                camera_pitch: 0.0,
+                camera_pos: camera.position(),
+                camera_yaw: camera.yaw(),
+                camera_pitch: camera.pitch(),
                 input: &self.input,
-                timestep,
+                timestep: clock.frame(),
             };
 
             (run_info.update)(&mut frame_context);
+
+            camera.set_position(frame_context.camera_pos);
+            camera.set_yaw(frame_context.camera_yaw);
+            camera.set_pitch(frame_context.camera_pitch);
+            camera.set_aspect(aspect_ratio(self.swapchain.extent()));
+
+            self.draw(&camera, &run_info.scene)?;
         }
 
         self.device.wait_idle()?;
@@ -119,7 +134,7 @@ impl Engine {
         Ok(())
     }
 
-    fn draw(&mut self, meshes: &[Mesh]) -> Result<()> {
+    fn draw(&mut self, camera: &Camera, meshes: &[Mesh]) -> Result<()> {
         // Resolves the TODO left in Swapchain::Recreate in C++: minimized, the
         // surface has a 0x0 extent and recreating the swapchain would be
         // invalid.
@@ -130,8 +145,8 @@ impl Engine {
         // `frame` borrows the renderer; the swapchain is a disjoint field, so
         // it stays reachable to read the extent and to present on submit.
         let mut frame = self.renderer.begin_frame(&mut self.swapchain)?;
-        let extent = self.swapchain.extent();
-        frame.draw_scene(meshes, extent);
+        frame.set_camera(camera);
+        frame.draw_scene(meshes);
         frame.submit(&mut self.swapchain)?;
 
         Ok(())
@@ -144,6 +159,16 @@ impl Drop for Engine {
         // `.ok()` to avoid panicking inside a Drop.
         self.device.wait_idle().ok();
     }
+}
+
+/// Falls back to 1.0 while minimized: a 0x0 extent would make the projection
+/// NaN, and the frame is skipped anyway.
+fn aspect_ratio(extent: vk::Extent2D) -> f32 {
+    if extent.height == 0 {
+        return 1.0;
+    }
+
+    extent.width as f32 / extent.height as f32
 }
 
 fn create_instance(window: &Window) -> Result<vk::raii::Instance> {

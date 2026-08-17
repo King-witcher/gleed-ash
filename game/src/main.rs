@@ -52,18 +52,9 @@ fn run() -> Result<()> {
     engine.run(run_info)
 }
 
-/// Orbits the camera around the origin, facing it.
-///
-/// Derived from `elapsed()` instead of accumulated from `delta_time()` because
-/// the engine builds a fresh [`FrameContext`] every frame: nothing written here
-/// survives into the next call.
 fn update(frame: &mut FrameContext) {
-    const RADIANS_PER_SECOND: f32 = 0.6;
-    const DISTANCE: f32 = 2.0;
+    let mouse_delta = frame.input.mouse_delta();
 
-    let yaw = RADIANS_PER_SECOND * frame.timestep.elapsed().as_secs_f32();
-
-    frame.camera_yaw = yaw;
-    frame.camera_pitch = 0.0;
-    frame.camera_pos = DISTANCE * Vec3::new(yaw.sin(), 0.0, yaw.cos());
+    frame.camera_yaw += mouse_delta.x * 0.022 * 2.2;
+    frame.camera_pitch -= mouse_delta.y * 0.022 * 2.2;
 }
