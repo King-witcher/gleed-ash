@@ -1,5 +1,7 @@
 # gleed-ash
 
+![Screenshot](screenshot.png)
+
 A Vulkan game engine written in Rust, with a small test game on top of it. It
 is a Rust rewrite of my previous C++ engine using Claude: SDL3 for window, input
 and surface, glam instead of GLM, gpu-allocator instead of VMA, and shaders
