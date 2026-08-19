@@ -16,6 +16,7 @@ use super::allocator::Allocator;
 use crate::device::Device;
 
 /// CPU-mappable memory (staging, uniforms).
+#[derive(Debug)]
 pub struct HostVisible;
 
 /// Pure VRAM, no CPU access.
@@ -35,6 +36,7 @@ impl AllocMode for DeviceLocal {
     const LOCATION: MemoryLocation = MemoryLocation::GpuOnly;
 }
 
+#[derive(Debug)]
 pub struct Buffer<Mode: AllocMode> {
     /// Refcounted handle: the `vkDestroyBuffer` in the `Drop` below never runs
     /// after `vkDestroyDevice`.

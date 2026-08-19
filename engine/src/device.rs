@@ -37,7 +37,7 @@ pub struct SurfaceSupport {
 
 /// Cloneable handle to the logical device: a clone costs one refcount bump on
 /// the `vk::raii::Device` plus the two queue family indices.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Device {
     device: vk::raii::Device,
     graphics_index: u32,

@@ -19,8 +19,6 @@ mod frame_slot;
 mod pipeline;
 mod uniform;
 
-use std::time::Instant;
-
 use crate::device::Device;
 use crate::internal_prelude::*;
 use crate::memory::Allocator;
@@ -36,17 +34,12 @@ pub use frame::Frame;
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct Renderer {
-    // FIELD ORDER IS DESTRUCTION ORDER: the slots use descriptor sets from
-    // the pool below, and destroying the pool releases them — no need for the
-    // FREE_DESCRIPTOR_SET the C++ used (there each vk::raii::DescriptorSet
-    // freed itself individually).
-    slots: Vec<FrameSlot>,
-    descriptor_pool: vk::raii::DescriptorPool,
+    slots: [FrameSlot; MAX_FRAMES_IN_FLIGHT],
+    _descriptor_pool: vk::raii::DescriptorPool,
     pipeline: Pipeline,
     graphics_queue: vk::raii::Queue,
-    device: Device,
+    _device: Device,
     next_slot: usize,
-    start_time: Instant,
 }
 
 impl Renderer {
@@ -55,7 +48,7 @@ impl Renderer {
         let pipeline = Pipeline::new(device.clone(), swapchain.image_format())?;
         let descriptor_pool = make_descriptor_pool(&device)?;
 
-        let slots = (0..MAX_FRAMES_IN_FLIGHT)
+        let slots: [FrameSlot; MAX_FRAMES_IN_FLIGHT] = (0..MAX_FRAMES_IN_FLIGHT)
             .map(|_| {
                 FrameSlot::new(
                     &device,
@@ -64,16 +57,17 @@ impl Renderer {
                     pipeline.descriptor_set_layout(),
                 )
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?
+            .try_into()
+            .expect("failed to allocate FrameSlots");
 
         Ok(Self {
             slots,
-            descriptor_pool,
+            _descriptor_pool: descriptor_pool,
             pipeline,
             graphics_queue,
-            device,
+            _device: device,
             next_slot: 0,
-            start_time: Instant::now(),
         })
     }
 
@@ -87,7 +81,6 @@ impl Renderer {
 
         // Borrowed before the slot: they are disjoint fields of the Renderer,
         // so they coexist with the `&mut self.slots` below.
-        let start_time = self.start_time;
         let pipeline = &self.pipeline;
         let queue = &self.graphics_queue;
 
@@ -130,7 +123,6 @@ impl Renderer {
             pipeline,
             queue,
             swapchain_image,
-            start_time,
         })
     }
 }

@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use glam::{Mat4, Vec3};
 
 use super::commands::transition_presentation;
@@ -43,7 +41,6 @@ pub struct Frame<'a> {
     pub(super) pipeline: &'a Pipeline,
     pub(super) queue: &'a vk::raii::Queue,
     pub(super) swapchain_image: SwapchainImage,
-    pub(super) start_time: Instant,
 }
 
 impl Frame<'_> {

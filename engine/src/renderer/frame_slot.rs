@@ -4,15 +4,10 @@ use crate::device::Device;
 use crate::internal_prelude::*;
 use crate::memory::{Allocator, Buffer, HostVisible};
 
-/// The persistent resources of one frame in flight, recycled round-robin by
-/// the [`super::Renderer`]. A [`super::Frame`] borrows from the slot it lands
-/// on for as long as it is being recorded.
+#[derive(Debug)]
 pub(super) struct FrameSlot {
     pub(super) transforms_buffer: Buffer<HostVisible>,
-    /// One command pool per slot: resetting the whole pool per frame is
-    /// cheaper than resetting buffer by buffer. The buffer carries a clone of
-    /// the pool, so holding both here imposes no ordering between them.
-    pub(super) command_buffer: vk::raii::CommandBuffer,
+    pub(super) command_buffer: vk::raii::CommandBuffer, // Each slot is reset all at once
     pub(super) command_pool: vk::raii::CommandPool,
     pub(super) descriptor_set: vk::DescriptorSet,
     pub(super) image_available: vk::raii::Semaphore,
@@ -32,9 +27,6 @@ impl FrameSlot {
             .context("allocate the command buffer")?;
         let descriptor_set = make_descriptor_set(device, descriptor_pool, layout)?;
 
-        // Points this slot's descriptor set at its own UBO. The buffer is
-        // persistent, so this binding is written once and only the contents
-        // change per frame — no need to rewrite the descriptor set every frame.
         let buffer_infos = [vk::DescriptorBufferInfo::default()
             .buffer(ubo.vk_buffer())
             .offset(0)
@@ -47,7 +39,6 @@ impl FrameSlot {
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .buffer_info(&buffer_infos)];
 
-        // The set was just allocated: no pending command buffer uses it.
         unsafe { device.raw().update_descriptor_sets(&writes, &[]) };
 
         Ok(Self {
@@ -70,7 +61,6 @@ fn make_command_pool(device: &Device) -> Result<vk::raii::CommandPool> {
 }
 
 pub(super) fn make_descriptor_pool(device: &Device) -> Result<vk::raii::DescriptorPool> {
-    // One uniform buffer descriptor per slot.
     let pool_sizes = [vk::DescriptorPoolSize::default()
         .ty(vk::DescriptorType::UNIFORM_BUFFER)
         .descriptor_count(MAX_FRAMES_IN_FLIGHT as u32)];
@@ -102,7 +92,6 @@ fn make_descriptor_set(
         .descriptor_pool(pool.handle())
         .set_layouts(&set_layouts);
 
-    // The pool is only used from here, while building the slots.
     let sets = unsafe { device.raw().allocate_descriptor_sets(&info) }
         .context("allocate the descriptor set")?;
 

@@ -20,7 +20,7 @@ struct Transforms
     float4x4 camera;
 }
 
-// [binding, set]
+// [binding, descriptor set]
 [[vk::binding(0, 0)]]
 ConstantBuffer<Transforms> transforms;
 

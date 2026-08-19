@@ -12,6 +12,7 @@ use super::buffer::{AllocMode, Buffer};
 use crate::device::Device;
 use crate::internal_prelude::*;
 
+#[derive(Debug)]
 struct AllocatorInner {
     device: Device,
     gpu_allocator: GpuAllocator,
@@ -19,7 +20,7 @@ struct AllocatorInner {
 
 /// Cheap cloneable handle, the same pattern as [`Device`]: the refcount lives
 /// inside, shared with every [`Buffer`] allocated from here.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Allocator(Rc<RefCell<AllocatorInner>>);
 
 impl Allocator {
