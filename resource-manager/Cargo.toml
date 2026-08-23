@@ -1,0 +1,12 @@
+[package]
+name = "resource-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image = "0.25"
+thiserror = "2"
+zip = "8.6.0"
+
+[build-dependencies]
+zip = "8.6.0"

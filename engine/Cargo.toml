@@ -4,33 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Vulkan: the `ash` types we use (reexported) plus the RAII layer in
-# `vk::raii`. The engine never talks to `ash` directly — everything goes
-# through this crate.
 vk = { path = "../vk" }
-
-# SDL3 (window + input + Vulkan surface), same SDL as the C++ engine.
-# `ash`: makes SDL return typed handles. This feature and gpu-allocator's
-# `vulkan` below pull the same `ash` the `vk` crate reexports — Cargo unifying
-# the three is what makes the types match without casts. Bumping one without
-# the others breaks that.
-# `build-from-source`: builds SDL3 alongside, like CMake's FetchContent.
 sdl3 = { version = "0.18", features = ["ash"] }
-
-# Replaces GLM. `perspective_rh` already uses 0..1 depth (which in C++ required
-# GLM_FORCE_DEPTH_ZERO_TO_ONE). `bytemuck`: Pod impls for the math types, so
-# vertices and uniforms can be uploaded as plain bytes.
 glam = { version = "0.33", features = ["bytemuck"] }
-
-# Replaces VMA (which is C++). Same role: sub-allocates large blocks of
-# VkDeviceMemory and picks the memory type from a declared usage.
 gpu-allocator = { version = "0.28", features = ["vulkan"] }
 
 # Safe reinterpretation of #[repr(C)] data as bytes for GPU uploads — what the
 # C++ did with reinterpret_cast, with the no-padding invariant checked at
 # compile time.
 bytemuck = { version = "1", features = ["derive"] }
-
-# Derives `Display` and `source()` for `Error`. Only that: the conversion into
-# `Error` stays with `IntoError`/`Context`, which `#[from]` could not express.
 thiserror = "2"
