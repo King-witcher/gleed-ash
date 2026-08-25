@@ -35,8 +35,6 @@ pub struct SurfaceSupport {
     pub present_modes: Vec<vk::PresentModeKHR>,
 }
 
-/// Cloneable handle to the logical device: a clone costs one refcount bump on
-/// the `vk::raii::Device` plus the two queue family indices.
 #[derive(Clone, Debug)]
 pub struct Device {
     device: vk::raii::Device,
@@ -96,14 +94,6 @@ impl Device {
         }
     }
 
-    pub fn create_semaphore(&self) -> Result<vk::raii::Semaphore> {
-        unsafe {
-            self.device
-                .create_semaphore(&vk::SemaphoreCreateInfo::default())
-        }
-        .context("create the semaphore")
-    }
-
     pub fn create_fence(&self, signaled: bool) -> Result<vk::raii::Fence> {
         let flags = if signaled {
             vk::FenceCreateFlags::SIGNALED
@@ -118,6 +108,14 @@ impl Device {
         .context("create the fence")
     }
 
+    pub fn create_semaphore(&self) -> Result<vk::raii::Semaphore> {
+        unsafe {
+            self.device
+                .create_semaphore(&vk::SemaphoreCreateInfo::default())
+        }
+        .context("create the semaphore")
+    }
+
     pub fn graphics_index(&self) -> u32 {
         self.graphics_index
     }
@@ -126,38 +124,12 @@ impl Device {
         self.present_index
     }
 
-    /// The RAII handle. Modules use it to create objects that destroy
-    /// themselves; the raw calls are reachable through its `Deref`.
-    pub fn vk(&self) -> &vk::raii::Device {
+    pub fn vk_device(&self) -> &vk::raii::Device {
         &self.device
-    }
-
-    /// The dispatch table, for calls that do not produce a RAII object and for
-    /// libraries that speak Vulkan on their own.
-    pub fn raw(&self) -> &vk::raw::Device {
-        &self.device
-    }
-
-    /// The instance that created this device. Whoever needs it takes it from
-    /// here instead of receiving it again from outside.
-    pub fn vulkan(&self) -> &vk::raii::Instance {
-        self.device.instance()
-    }
-
-    /// The instance with its dispatch table — today only `gpu-allocator`
-    /// needs it.
-    pub fn vulkan_raw(&self) -> &vk::raw::Instance {
-        self.device.instance()
     }
 
     pub fn physical_device(&self) -> &vk::raii::PhysicalDevice {
         self.device.physical_device()
-    }
-
-    /// The bare handle, for libraries that speak Vulkan on their own — today
-    /// `gpu-allocator`, in `Allocator::new`.
-    pub fn physical_device_handle(&self) -> vk::PhysicalDevice {
-        self.physical_device().handle()
     }
 
     /// The queue owns the device by refcount: the `vkQueue*` calls come from
@@ -169,7 +141,8 @@ impl Device {
     }
 
     pub fn wait_idle(&self) -> Result<()> {
-        unsafe { self.device.device_wait_idle() }.context("wait for the device to become idle")
+        unsafe { self.device.handle().device_wait_idle() }
+            .context("wait for the device to become idle")
     }
 }
 

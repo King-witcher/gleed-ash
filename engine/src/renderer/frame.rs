@@ -4,7 +4,7 @@ use super::commands::transition_presentation;
 use super::pipeline::Pipeline;
 use super::uniform::Transforms;
 use crate::internal_prelude::*;
-use crate::memory::{Buffer, HostVisible};
+use crate::memory::{AllocatedBuffer, HostVisible};
 use crate::mesh::Mesh;
 use crate::renderer::Camera;
 use crate::swapchain::{Swapchain, SwapchainImage};
@@ -34,7 +34,7 @@ impl Drop for MustSubmit {
 pub struct Frame<'a> {
     pub(super) guard: MustSubmit,
     pub(super) command_buffer: &'a mut vk::raii::CommandBuffer,
-    pub(super) transforms_buffer: &'a mut Buffer<HostVisible>,
+    pub(super) transforms_buffer: &'a mut AllocatedBuffer<HostVisible>,
     pub(super) descriptor_set: vk::DescriptorSet,
     pub(super) image_available: &'a vk::raii::Semaphore,
     pub(super) fence: &'a vk::raii::Fence,
@@ -70,11 +70,11 @@ impl Frame<'_> {
             for mesh in scene {
                 self.command_buffer.bind_vertex_buffers(
                     0,
-                    &[mesh.vertex_buffer().vk_buffer()],
+                    &[mesh.vertex_buffer().vk_buffer().handle()],
                     &[0],
                 );
                 self.command_buffer.bind_index_buffer(
-                    mesh.index_buffer().vk_buffer(),
+                    mesh.index_buffer().vk_buffer().handle(),
                     0,
                     vk::IndexType::UINT32,
                 );

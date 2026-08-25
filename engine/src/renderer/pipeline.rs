@@ -68,7 +68,7 @@ fn make_descriptor_set_layout(device: &Device) -> Result<vk::raii::DescriptorSet
 
     let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
-    unsafe { device.vk().create_descriptor_set_layout(&info) }
+    unsafe { device.vk_device().create_descriptor_set_layout(&info) }
         .context("create the descriptor set layout")
 }
 
@@ -81,7 +81,8 @@ fn make_pipeline_layout(
     let set_layouts = [descriptor_set_layout.handle()];
     let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
 
-    unsafe { device.vk().create_pipeline_layout(&info) }.context("create the pipeline layout")
+    unsafe { device.vk_device().create_pipeline_layout(&info) }
+        .context("create the pipeline layout")
 }
 
 fn make_pipeline(
@@ -92,7 +93,7 @@ fn make_pipeline(
     let code = shader_code();
     let shader_module = unsafe {
         device
-            .vk()
+            .vk_device()
             .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&code))
     }
     .context("create the shader module")?;
@@ -172,17 +173,11 @@ fn make_pipeline(
 
     // No cache for now. The chained structs above stay alive until here, and
     // the shader module goes away on its own at the end of the function —
-    // including on the error path. The error is not a plain VkResult because
-    // creation can fail for part of the batch's pipelines.
-    let created = unsafe {
+    // including on the error path.
+    unsafe {
         device
-            .vk()
-            .create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info])
-    };
-
-    let mut pipelines = created
-        .map_err(|(_, result)| result)
-        .context("create the graphics pipeline")?;
-
-    Ok(pipelines.remove(0))
+            .vk_device()
+            .create_graphics_pipeline(vk::PipelineCache::null(), pipeline_info)
+    }
+    .context("create the graphics pipeline")
 }

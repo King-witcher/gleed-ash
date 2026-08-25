@@ -8,6 +8,7 @@ vk = { path = "../vk" }
 sdl3 = { version = "0.18", features = ["ash"] }
 glam = { version = "0.33", features = ["bytemuck"] }
 gpu-allocator = { version = "0.28", features = ["vulkan"] }
+resource-manager = { path = "../resource-manager" }
 
 # Safe reinterpretation of #[repr(C)] data as bytes for GPU uploads — what the
 # C++ did with reinterpret_cast, with the no-padding invariant checked at

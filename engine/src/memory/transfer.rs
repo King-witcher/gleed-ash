@@ -1,18 +1,17 @@
 //! The staging path: how data on the CPU reaches a device-local buffer.
 
 use bytemuck::Pod;
+use resource_manager::ImageResource;
 
-use super::buffer::{Buffer, DeviceLocal, HostVisible};
+use super::buffer::AllocatedBuffer;
 use super::Allocator;
 use crate::device::Device;
 use crate::internal_prelude::*;
+use crate::memory::{AllocatedImage, DeviceLocal, HostVisible};
 
 pub struct TransferContext {
     allocator: Allocator,
     queue: vk::raii::Queue,
-    /// A single command buffer recycled on every upload: the pool is reset
-    /// before recording, instead of allocating and freeing one buffer at a
-    /// time.
     command_buffer: vk::raii::CommandBuffer,
     pool: vk::raii::CommandPool,
     fence: vk::raii::Fence,
@@ -24,8 +23,6 @@ impl TransferContext {
         let pool = make_command_pool(&device)?;
         let command_buffer = unsafe { pool.allocate_one(vk::CommandBufferLevel::PRIMARY) }
             .context("allocate the transfer command buffer")?;
-        // Not signaled: the first wait must actually wait for the GPU. If it
-        // started signaled, it would return before the copy finished.
         let fence = device.create_fence(false)?;
 
         Ok(Self {
@@ -43,13 +40,10 @@ impl TransferContext {
     ///
     /// `&mut self` because recording requires exclusive access to the command
     /// buffer — the same rule Vulkan imposes, only compiler-checked.
-    pub fn immediate_submit(
+    fn immediate_submit(
         &mut self,
         record: impl FnOnce(&mut vk::raii::CommandBuffer),
     ) -> Result<()> {
-        // The fence wait at the end of the previous call already guaranteed
-        // the GPU is done with this buffer, and the `&mut self` that nothing
-        // else is recording into it.
         unsafe { self.pool.reset(vk::CommandPoolResetFlags::empty()) }
             .context("reset the transfer command pool")?;
 
@@ -76,21 +70,18 @@ impl TransferContext {
         unsafe { self.fence.reset() }.context("reset the transfer fence")
     }
 
-    /// Allocates a device-local (VRAM) buffer and uploads `data` into it via
-    /// staging. The host-visible staging buffer is created and freed
-    /// internally.
     pub fn upload_buffer(
         &mut self,
         data: &[u8],
         usage: vk::BufferUsageFlags,
-    ) -> Result<Buffer<DeviceLocal>> {
+    ) -> Result<AllocatedBuffer<DeviceLocal>> {
         // 1. Host-visible staging: the CPU writes the data here.
         let staging_info = vk::BufferCreateInfo::default()
             .size(data.len() as u64)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let mut staging = self.allocator.allocate::<HostVisible>(&staging_info)?;
+        let mut staging = self.allocator.create_buffer::<HostVisible>(&staging_info)?;
         staging.map_copy(data);
 
         // 2. Device-local destination (VRAM), also a transfer target.
@@ -99,26 +90,103 @@ impl TransferContext {
             .usage(usage | vk::BufferUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let gpu = self.allocator.allocate::<DeviceLocal>(&gpu_info)?;
+        let gpu = self.allocator.create_buffer::<DeviceLocal>(&gpu_info)?;
 
         // 3. Copies staging -> device-local on the GPU and waits for it.
         self.immediate_submit(|command_buffer| {
             let region = vk::BufferCopy::default().size(data.len() as u64);
-            // The buffer is recording (immediate_submit just called begin) and
-            // both buffers stay alive until the end of this function.
-            unsafe { command_buffer.copy_buffer(staging.vk_buffer(), gpu.vk_buffer(), &[region]) };
+            unsafe {
+                command_buffer.copy_buffer(
+                    staging.vk_buffer().handle(),
+                    gpu.vk_buffer().handle(),
+                    &[region],
+                )
+            };
         })?;
 
-        // `staging` is dropped here — safe: immediate_submit waited on the
-        // fence, so the copy has finished.
         Ok(gpu)
+    }
+
+    pub fn upload_image(&mut self, image: &ImageResource) -> Result<AllocatedImage> {
+        let extent = vk::Extent3D {
+            width: image.width(),
+            height: image.height(),
+            depth: 1,
+        };
+
+        let mut staging = self.allocator.create_buffer::<HostVisible>(
+            &vk::BufferCreateInfo::default()
+                .size(image.size() as u64)
+                .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE),
+        )?;
+        staging.map_copy(&image.buffer);
+
+        let allocated_image = self.allocator.create_image(
+            &vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk::Format::R8G8B8A8_SRGB) // Todo: unhardcode it
+                .extent(extent)
+                .mip_levels(1)
+                .array_layers(1)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE),
+        )?;
+
+        let image_handle = allocated_image.vk_image().handle();
+
+        self.immediate_submit(|command_buffer| {
+            unsafe {
+                // Maybe different because of barrier2
+                image_barrier(
+                    command_buffer,
+                    image_handle,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::AccessFlags2::NONE,
+                    vk::PipelineStageFlags2::NONE,
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                    vk::PipelineStageFlags2::COPY,
+                );
+
+                let copy_region = vk::BufferImageCopy::default()
+                    .buffer_offset(0)
+                    .buffer_row_length(0)
+                    .buffer_image_height(0)
+                    .image_subresource(image_subresource_layers())
+                    .image_extent(extent);
+
+                // test copy buffer to image 2
+                command_buffer.copy_buffer_to_image(
+                    staging.vk_buffer().handle(),
+                    image_handle,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[copy_region],
+                );
+
+                image_barrier(
+                    command_buffer,
+                    image_handle,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                    vk::PipelineStageFlags2::COPY,
+                    vk::AccessFlags2::SHADER_READ,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
+                );
+            };
+        })?;
+
+        Ok(allocated_image)
     }
 
     pub fn upload_slice<T: Pod>(
         &mut self,
         values: &[T],
         usage: vk::BufferUsageFlags,
-    ) -> Result<Buffer<DeviceLocal>> {
+    ) -> Result<AllocatedBuffer<DeviceLocal>> {
         self.upload_buffer(bytemuck::cast_slice(values), usage)
     }
 }
@@ -130,5 +198,53 @@ fn make_command_pool(device: &Device) -> Result<vk::raii::CommandPool> {
         .flags(vk::CommandPoolCreateFlags::TRANSIENT)
         .queue_family_index(device.graphics_index());
 
-    unsafe { device.vk().create_command_pool(&info) }.context("create the command pool")
+    unsafe { device.vk_device().create_command_pool(&info) }.context("create the command pool")
+}
+
+unsafe fn image_barrier<'a>(
+    command_buffer: &mut vk::raii::CommandBuffer,
+    image: vk::Image,
+    from: vk::ImageLayout,
+    to: vk::ImageLayout,
+    src_access: vk::AccessFlags2,
+    src_stage: vk::PipelineStageFlags2,
+    dst_access: vk::AccessFlags2,
+    dst_stage: vk::PipelineStageFlags2,
+) {
+    let barrier = [vk::ImageMemoryBarrier2::default()
+        .image(image)
+        // src
+        .src_access_mask(src_access)
+        .src_stage_mask(src_stage)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .old_layout(from)
+        // dst
+        .dst_access_mask(dst_access)
+        .dst_stage_mask(dst_stage)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .new_layout(to)
+        .subresource_range(image_subresource_range())];
+
+    let dependency_info = vk::DependencyInfo::default().image_memory_barriers(&barrier);
+
+    unsafe { command_buffer.pipeline_barrier2(&dependency_info) };
+}
+
+fn image_subresource_layers() -> vk::ImageSubresourceLayers {
+    vk::ImageSubresourceLayers {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        mip_level: 0,
+        base_array_layer: 0,
+        layer_count: 1,
+    }
+}
+
+fn image_subresource_range() -> vk::ImageSubresourceRange {
+    vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        base_mip_level: 0,
+        level_count: 1,
+        base_array_layer: 0,
+        layer_count: 1,
+    }
 }

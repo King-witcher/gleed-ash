@@ -1,46 +1,29 @@
 use std::fmt;
-use std::ops::Deref;
 
 use ash::khr;
 use ash::vk;
 
 use super::Instance;
 
-/// Owns a `VkSurfaceKHR` and the `VK_KHR_surface` loader used to query and
-/// destroy it. The `Instance` clone keeps the parent alive, so
-/// `vkDestroySurfaceKHR` can never run after `vkDestroyInstance`.
-///
-/// The `vkGetPhysicalDeviceSurface*` queries live on [`PhysicalDevice`], which
-/// is where Vulkan puts them; they reach this loader through
-/// [`loader`](Self::loader).
-///
-/// [`PhysicalDevice`]: crate::raii::PhysicalDevice
 pub struct Surface {
-    raw: vk::SurfaceKHR,
-    loader: khr::surface::Instance,
+    handle: vk::SurfaceKHR,
+    surface_loader: khr::surface::Instance,
     instance: Instance,
 }
 
 impl Surface {
-    /// Takes ownership of an already created `VkSurfaceKHR` — the one SDL hands
-    /// back, for instance.
-    ///
-    /// # Safety
-    /// - `raw` must have been created from `instance`;
-    /// - this takes ownership of `raw`: nothing else may destroy it;
-    /// - `VK_KHR_surface` must be enabled on the instance.
-    pub unsafe fn from_raw(instance: Instance, raw: vk::SurfaceKHR) -> Self {
-        let loader = khr::surface::Instance::new(instance.entry(), &instance);
+    pub unsafe fn from_handle(instance: Instance, handle: vk::SurfaceKHR) -> Self {
+        let surface_loader = khr::surface::Instance::new(instance.vk_entry(), instance.handle());
         Self {
-            raw,
-            loader,
+            handle,
+            surface_loader,
             instance,
         }
     }
 
     #[inline]
     pub fn handle(&self) -> vk::SurfaceKHR {
-        self.raw
+        self.handle
     }
 
     #[inline]
@@ -50,27 +33,18 @@ impl Surface {
 
     #[inline]
     pub fn loader(&self) -> &khr::surface::Instance {
-        &self.loader
-    }
-}
-
-impl Deref for Surface {
-    type Target = vk::SurfaceKHR;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.raw
+        &self.surface_loader
     }
 }
 
 impl fmt::Debug for Surface {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Surface").field(&self.raw).finish()
+        f.debug_tuple("Surface").field(&self.handle).finish()
     }
 }
 
 impl Drop for Surface {
     fn drop(&mut self) {
-        unsafe { self.loader.destroy_surface(self.raw, None) };
+        unsafe { self.surface_loader.destroy_surface(self.handle, None) };
     }
 }

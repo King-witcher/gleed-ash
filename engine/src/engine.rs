@@ -53,8 +53,8 @@ impl Engine {
         let vulkan = create_instance(&window)?;
 
         let surface = {
-            let handle = unsafe { window.vulkan_surface(vulkan.handle()) }?;
-            unsafe { vk::raii::Surface::from_raw(vulkan.clone(), handle) }
+            let handle = unsafe { window.vulkan_surface(vulkan.handle().handle()) }?;
+            unsafe { vk::raii::Surface::from_handle(vulkan.clone(), handle) }
         };
 
         let device = Device::new(&vulkan, &surface)?;

@@ -1,28 +1,21 @@
-use std::fmt;
-use std::ops::Deref;
-
 use ash::prelude::VkResult;
 use ash::vk;
+use std::fmt;
 
 use super::Device;
 
-/// A queue owned by the device. Nothing is created or destroyed here, but the
-/// `Device` clone is still needed: the `vkQueue*` entry points come from the
-/// device dispatch table.
 #[derive(Clone)]
 pub struct Queue {
-    raw: vk::Queue,
+    handle: vk::Queue,
     family_index: u32,
     device: Device,
 }
 
 impl Queue {
-    /// # Safety
-    /// `raw` must have been retrieved from `device` for `family_index`.
     #[inline]
-    pub unsafe fn from_raw(device: Device, raw: vk::Queue, family_index: u32) -> Self {
+    pub fn from_handle(device: Device, handle: vk::Queue, family_index: u32) -> Self {
         Self {
-            raw,
+            handle,
             family_index,
             device,
         }
@@ -30,7 +23,7 @@ impl Queue {
 
     #[inline]
     pub fn handle(&self) -> vk::Queue {
-        self.raw
+        self.handle
     }
 
     #[inline]
@@ -43,41 +36,25 @@ impl Queue {
         &self.device
     }
 
-    /// # Safety
-    /// - the queue must be externally synchronized;
-    /// - every command buffer in `submits` must be in the executable state and
-    ///   not already pending;
-    /// - each waited semaphore must be signaled or have a signal already
-    ///   submitted;
-    /// - `fence` must be unsignaled and not in use by another pending submit.
     #[inline]
     pub unsafe fn submit2(&self, submits: &[vk::SubmitInfo2], fence: vk::Fence) -> VkResult<()> {
-        unsafe { self.device.queue_submit2(self.raw, submits, fence) }
+        unsafe {
+            self.device
+                .handle()
+                .queue_submit2(self.handle, submits, fence)
+        }
     }
 
-    /// Blocks until every submission on this queue has finished.
-    ///
-    /// # Safety
-    /// Same contract as `vkQueueWaitIdle`.
     #[inline]
     pub unsafe fn wait_idle(&self) -> VkResult<()> {
-        unsafe { self.device.queue_wait_idle(self.raw) }
-    }
-}
-
-impl Deref for Queue {
-    type Target = vk::Queue;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.raw
+        unsafe { self.device.handle().queue_wait_idle(self.handle) }
     }
 }
 
 impl fmt::Debug for Queue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Queue")
-            .field("handle", &self.raw)
+            .field("handle", &self.handle)
             .field("family_index", &self.family_index)
             .finish()
     }

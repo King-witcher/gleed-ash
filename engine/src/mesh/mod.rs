@@ -1,25 +1,20 @@
-//! The geometry data model, from the single vertex up to the buffers in VRAM.
-//! Equivalent to modules/engine/src/mesh.{h,cc} + vertex.h.
-
 mod vertex;
 
 pub use vertex::Vertex;
 
 use crate::internal_prelude::*;
-use crate::memory::{Buffer, DeviceLocal, TransferContext};
+use crate::memory::{AllocatedBuffer, DeviceLocal, TransferContext};
 
-/// The CPU side of a mesh: plain data, no GPU resource involved. Produced by
-/// the pure generators in [`geometry`] and consumed by [`Mesh::new`].
 pub struct MeshData {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
 }
 
-/// The GPU side: vertex and index buffers living in VRAM.
+#[derive(Debug)]
 pub struct Mesh {
     index_count: u32,
-    vertex_buffer: Buffer<DeviceLocal>,
-    index_buffer: Buffer<DeviceLocal>,
+    vertex_buffer: AllocatedBuffer<DeviceLocal>,
+    index_buffer: AllocatedBuffer<DeviceLocal>,
 }
 
 impl Mesh {
@@ -37,11 +32,11 @@ impl Mesh {
         self.index_count
     }
 
-    pub fn vertex_buffer(&self) -> &Buffer<DeviceLocal> {
+    pub fn vertex_buffer(&self) -> &AllocatedBuffer<DeviceLocal> {
         &self.vertex_buffer
     }
 
-    pub fn index_buffer(&self) -> &Buffer<DeviceLocal> {
+    pub fn index_buffer(&self) -> &AllocatedBuffer<DeviceLocal> {
         &self.index_buffer
     }
 }

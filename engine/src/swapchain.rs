@@ -214,8 +214,8 @@ fn create_swapchain(
     // The extension is in REQUIRED_EXTENSIONS and the surface came from the
     // same instance as the device; `old` is either null or the swapchain being
     // replaced.
-    let swapchain =
-        unsafe { device.vk().create_swapchain(&create_info) }.context("create the swapchain")?;
+    let swapchain = unsafe { device.vk_device().create_swapchain(&create_info) }
+        .context("create the swapchain")?;
 
     Ok((swapchain, format.format, extent))
 }
@@ -248,7 +248,7 @@ fn create_images(
                     layer_count: 1,
                 });
 
-            let image_view = unsafe { device.vk().create_image_view(&view_info) }
+            let image_view = unsafe { device.vk_device().create_image_view(&view_info) }
                 .context("create the image view")?;
 
             Ok(ImageResources {

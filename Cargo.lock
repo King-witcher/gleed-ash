@@ -374,6 +374,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "gpu-allocator",
+ "resource-manager",
  "sdl3",
  "thiserror",
  "vk",

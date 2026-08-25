@@ -1,35 +1,24 @@
 use std::fmt;
-use std::ops::Deref;
 
 use ash::prelude::VkResult;
 use ash::vk;
 
 use super::{CommandPool, Device};
 
-/// Owns a `VkCommandBuffer` and frees it on drop.
-///
-/// Carries the pool it came from — `vkFreeCommandBuffers` needs it, and it is
-/// also how the recording methods below reach the device dispatch table. None of
-/// them check the command buffer state machine: `begin` before any `cmd_*`,
-/// `end` before submitting, and no recording while a submit is pending are all
-/// on the caller.
 pub struct CommandBuffer {
-    raw: vk::CommandBuffer,
+    handle: vk::CommandBuffer,
     pool: CommandPool,
 }
 
 impl CommandBuffer {
-    /// # Safety
-    /// - `raw` must have been allocated from `pool`;
-    /// - this takes ownership of `raw`: nothing else may free it.
     #[inline]
-    pub unsafe fn from_raw(pool: CommandPool, raw: vk::CommandBuffer) -> Self {
-        Self { raw, pool }
+    pub unsafe fn from_handle(pool: CommandPool, handle: vk::CommandBuffer) -> Self {
+        Self { handle, pool }
     }
 
     #[inline]
     pub fn handle(&self) -> vk::CommandBuffer {
-        self.raw
+        self.handle
     }
 
     #[inline]
@@ -46,14 +35,18 @@ impl CommandBuffer {
     /// The buffer must be in the initial state and externally synchronized.
     #[inline]
     pub unsafe fn begin(&mut self, begin_info: &vk::CommandBufferBeginInfo) -> VkResult<()> {
-        unsafe { self.device().begin_command_buffer(self.raw, begin_info) }
+        unsafe {
+            self.device()
+                .handle()
+                .begin_command_buffer(self.handle, begin_info)
+        }
     }
 
     /// # Safety
     /// The buffer must be in the recording state.
     #[inline]
     pub unsafe fn end(&mut self) -> VkResult<()> {
-        unsafe { self.device().end_command_buffer(self.raw) }
+        unsafe { self.device().handle().end_command_buffer(self.handle) }
     }
 
     /// # Safety
@@ -61,26 +54,50 @@ impl CommandBuffer {
     /// buffer must not be pending execution.
     #[inline]
     pub unsafe fn reset(&mut self, flags: vk::CommandBufferResetFlags) -> VkResult<()> {
-        unsafe { self.device().reset_command_buffer(self.raw, flags) }
+        unsafe {
+            self.device()
+                .handle()
+                .reset_command_buffer(self.handle, flags)
+        }
     }
 }
 
-/// Every `cmd_*` below has the same contract: the buffer is recording, the pool
-/// is externally synchronized, and the handles passed in are alive and valid for
-/// the command.
 impl CommandBuffer {
     /// # Safety
     /// See the note on this `impl` block.
     #[inline]
     pub unsafe fn begin_rendering(&mut self, rendering_info: &vk::RenderingInfo) {
-        unsafe { self.device().cmd_begin_rendering(self.raw, rendering_info) };
+        unsafe {
+            self.device()
+                .handle()
+                .cmd_begin_rendering(self.handle, rendering_info)
+        };
+    }
+
+    #[inline]
+    pub unsafe fn copy_buffer_to_image(
+        &mut self,
+        src_buffer: vk::Buffer,
+        dst_image: vk::Image,
+        dst_image_layout: vk::ImageLayout,
+        regions: &[vk::BufferImageCopy],
+    ) {
+        unsafe {
+            self.device().handle().cmd_copy_buffer_to_image(
+                self.handle,
+                src_buffer,
+                dst_image,
+                dst_image_layout,
+                regions,
+            );
+        }
     }
 
     /// # Safety
     /// See the note on this `impl` block.
     #[inline]
     pub unsafe fn end_rendering(&mut self) {
-        unsafe { self.device().cmd_end_rendering(self.raw) };
+        unsafe { self.device().handle().cmd_end_rendering(self.handle) };
     }
 
     /// # Safety
@@ -89,8 +106,9 @@ impl CommandBuffer {
     pub unsafe fn pipeline_barrier2(&mut self, dependency_info: &vk::DependencyInfo) {
         unsafe {
             self.device()
-                .cmd_pipeline_barrier2(self.raw, dependency_info)
-        };
+                .handle()
+                .cmd_pipeline_barrier2(self.handle, dependency_info)
+        }
     }
 
     /// # Safety
@@ -99,7 +117,8 @@ impl CommandBuffer {
     pub unsafe fn set_viewport(&mut self, first_viewport: u32, viewports: &[vk::Viewport]) {
         unsafe {
             self.device()
-                .cmd_set_viewport(self.raw, first_viewport, viewports)
+                .handle()
+                .cmd_set_viewport(self.handle, first_viewport, viewports)
         };
     }
 
@@ -109,7 +128,8 @@ impl CommandBuffer {
     pub unsafe fn set_scissor(&mut self, first_scissor: u32, scissors: &[vk::Rect2D]) {
         unsafe {
             self.device()
-                .cmd_set_scissor(self.raw, first_scissor, scissors)
+                .handle()
+                .cmd_set_scissor(self.handle, first_scissor, scissors)
         };
     }
 
@@ -123,7 +143,8 @@ impl CommandBuffer {
     ) {
         unsafe {
             self.device()
-                .cmd_bind_pipeline(self.raw, bind_point, pipeline)
+                .handle()
+                .cmd_bind_pipeline(self.handle, bind_point, pipeline)
         };
     }
 
@@ -139,8 +160,8 @@ impl CommandBuffer {
         dynamic_offsets: &[u32],
     ) {
         unsafe {
-            self.device().cmd_bind_descriptor_sets(
-                self.raw,
+            self.device().handle().cmd_bind_descriptor_sets(
+                self.handle,
                 bind_point,
                 layout,
                 first_set,
@@ -160,8 +181,12 @@ impl CommandBuffer {
         offsets: &[vk::DeviceSize],
     ) {
         unsafe {
-            self.device()
-                .cmd_bind_vertex_buffers(self.raw, first_binding, buffers, offsets)
+            self.device().handle().cmd_bind_vertex_buffers(
+                self.handle,
+                first_binding,
+                buffers,
+                offsets,
+            )
         };
     }
 
@@ -176,7 +201,8 @@ impl CommandBuffer {
     ) {
         unsafe {
             self.device()
-                .cmd_bind_index_buffer(self.raw, buffer, offset, index_type)
+                .handle()
+                .cmd_bind_index_buffer(self.handle, buffer, offset, index_type)
         };
     }
 
@@ -191,8 +217,8 @@ impl CommandBuffer {
         first_instance: u32,
     ) {
         unsafe {
-            self.device().cmd_draw(
-                self.raw,
+            self.device().handle().cmd_draw(
+                self.handle,
                 vertex_count,
                 instance_count,
                 first_vertex,
@@ -213,8 +239,8 @@ impl CommandBuffer {
         first_instance: u32,
     ) {
         unsafe {
-            self.device().cmd_draw_indexed(
-                self.raw,
+            self.device().handle().cmd_draw_indexed(
+                self.handle,
                 index_count,
                 instance_count,
                 first_index,
@@ -233,22 +259,17 @@ impl CommandBuffer {
         dst: vk::Buffer,
         regions: &[vk::BufferCopy],
     ) {
-        unsafe { self.device().cmd_copy_buffer(self.raw, src, dst, regions) };
-    }
-}
-
-impl Deref for CommandBuffer {
-    type Target = vk::CommandBuffer;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.raw
+        unsafe {
+            self.device()
+                .handle()
+                .cmd_copy_buffer(self.handle, src, dst, regions)
+        };
     }
 }
 
 impl fmt::Debug for CommandBuffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("CommandBuffer").field(&self.raw).finish()
+        f.debug_tuple("CommandBuffer").field(&self.handle).finish()
     }
 }
 
@@ -257,7 +278,8 @@ impl Drop for CommandBuffer {
         unsafe {
             self.pool
                 .device()
-                .free_command_buffers(self.pool.handle(), &[self.raw])
+                .handle()
+                .free_command_buffers(self.pool.handle(), &[self.handle])
         };
     }
 }

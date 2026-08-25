@@ -7,6 +7,7 @@ pub mod mesh;
 mod platform;
 mod renderer;
 mod swapchain;
+pub mod texture;
 pub mod time;
 
 pub use engine::{Engine, FrameContext, RunInfo};

@@ -12,6 +12,20 @@ impl Debug for ImageResource {
     }
 }
 
+impl ImageResource {
+    pub fn size(&self) -> usize {
+        self.buffer.len()
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
 #[derive(Debug)]
 pub enum ResourceData {
     Image(ImageResource),
