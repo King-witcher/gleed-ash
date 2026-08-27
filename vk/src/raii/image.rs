@@ -43,4 +43,22 @@ impl Image {
                 .bind_image_memory(self.handle, memory, memory_offset)
         }
     }
+
+    pub unsafe fn create_image_view(
+        &self,
+        view_type: vk::ImageViewType,
+        format: vk::Format,
+        subresource_range: vk::ImageSubresourceRange,
+    ) -> VkResult<crate::raii::ImageView> {
+        unsafe {
+            let create_info = vk::ImageViewCreateInfo {
+                image: self.handle,
+                view_type,
+                format,
+                subresource_range,
+                ..Default::default()
+            };
+            self.device.create_image_view(&create_info)
+        }
+    }
 }
