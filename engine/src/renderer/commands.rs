@@ -1,14 +1,5 @@
-//! Render pass commands shared between the start of the frame
-//! ([`super::Renderer::begin_frame`]) and its end ([`super::Frame::submit`]).
-//!
-//! Every function is `unsafe` for the same reason: `vk::raii` does not check
-//! the command buffer state machine, so the caller guarantees it is recording
-//! and that the image passed in stays alive.
-
 use crate::swapchain::SwapchainImage;
 
-/// # Safety
-/// See the module note.
 pub(super) unsafe fn begin_rendering(
     command_buffer: &mut vk::raii::CommandBuffer,
     image: &SwapchainImage,
@@ -17,7 +8,7 @@ pub(super) unsafe fn begin_rendering(
     let color_attachments = [vk::RenderingAttachmentInfo::default()
         .image_view(image.image_view)
         .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .load_op(vk::AttachmentLoadOp::CLEAR)
+        .load_op(vk::AttachmentLoadOp::DONT_CARE)
         .store_op(vk::AttachmentStoreOp::STORE)
         .clear_value(vk::ClearValue {
             color: vk::ClearColorValue {
@@ -60,30 +51,22 @@ pub(super) unsafe fn begin_rendering(
     }
 }
 
-/// # Safety
-/// See the module note.
 pub(super) unsafe fn transition_rendering(
     command_buffer: &mut vk::raii::CommandBuffer,
     image: vk::Image,
 ) {
     let barriers = [vk::ImageMemoryBarrier2::default()
-        // What the transition must wait for before running. Even with no
-        // earlier commands in the pipeline, this creates a dependency on the
-        // Color Attachment Output stage. It keeps the transition from
-        // happening before the imageAvailable semaphore — which gates that
-        // stage — signals.
-        .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-        // No memory writes to make available.
-        .src_access_mask(vk::AccessFlags2::empty())
-        // What must wait for the transition before running.
-        .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-        // Makes this access visible (invalidates caches).
-        .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
+        // src
         .old_layout(vk::ImageLayout::UNDEFINED)
-        .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        // Everything runs on the same queue, so nothing needs transferring.
+        .src_stage_mask(vk::PipelineStageFlags2::NONE)
+        .src_access_mask(vk::AccessFlags2::empty())
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        // dst
+        .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
+        .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        // etc
         .image(image)
         .subresource_range(color_subresource_range())];
 
@@ -91,27 +74,22 @@ pub(super) unsafe fn transition_rendering(
     unsafe { command_buffer.pipeline_barrier2(&dependency_info) };
 }
 
-/// # Safety
-/// See the module note.
 pub(super) unsafe fn transition_presentation(
     command_buffer: &mut vk::raii::CommandBuffer,
     image: vk::Image,
 ) {
     let barriers = [vk::ImageMemoryBarrier2::default()
-        // Waits for every Color Attachment Output to finish before moving back
-        // to the present optimal layout.
-        .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-        // Flushes the color attachment writes.
-        .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
-        // Nothing in this buffer waits for this barrier to finish.
-        // Equivalent to eBottomOfPipe.
-        .dst_stage_mask(vk::PipelineStageFlags2::empty())
-        // Nothing to make available.
-        .dst_access_mask(vk::AccessFlags2::empty())
+        // src
         .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        // dst
+        .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        .dst_stage_mask(vk::PipelineStageFlags2::empty())
+        .dst_access_mask(vk::AccessFlags2::empty())
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        // etc
         .image(image)
         .subresource_range(color_subresource_range())];
 

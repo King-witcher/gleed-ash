@@ -111,6 +111,24 @@ impl CommandBuffer {
         }
     }
 
+    pub unsafe fn push_constants(
+        &mut self,
+        layout: vk::PipelineLayout,
+        stage_flags: vk::ShaderStageFlags,
+        offset: u32,
+        constants: &[u8],
+    ) {
+        unsafe {
+            self.device().handle().cmd_push_constants(
+                self.handle,
+                layout,
+                stage_flags,
+                offset,
+                constants,
+            )
+        };
+    }
+
     /// # Safety
     /// See the note on this `impl` block.
     #[inline]

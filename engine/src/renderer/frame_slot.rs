@@ -1,4 +1,4 @@
-use super::uniform::Transforms;
+use super::data::CameraUniform;
 use super::MAX_FRAMES_IN_FLIGHT;
 use crate::device::Device;
 use crate::internal_prelude::*;
@@ -6,7 +6,7 @@ use crate::memory::{AllocatedBuffer, Allocator, HostVisible};
 
 #[derive(Debug)]
 pub(super) struct FrameSlot {
-    pub(super) transforms_buffer: AllocatedBuffer<HostVisible>,
+    pub(super) camera_buffer: AllocatedBuffer<HostVisible>,
     pub(super) command_buffer: vk::raii::CommandBuffer, // Each slot is reset all at once
     pub(super) command_pool: vk::raii::CommandPool,
     pub(super) descriptor_set: vk::DescriptorSet,
@@ -30,7 +30,7 @@ impl FrameSlot {
         let buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(ubo.vk_buffer().handle())
             .offset(0)
-            .range(std::mem::size_of::<Transforms>() as u64)];
+            .range(std::mem::size_of::<CameraUniform>() as u64)];
 
         let write = vk::WriteDescriptorSet::default()
             .dst_set(descriptor_set)
@@ -42,7 +42,7 @@ impl FrameSlot {
         unsafe { device.vk_device().update_descriptor_sets(&[write], &[]) };
 
         Ok(Self {
-            transforms_buffer: ubo,
+            camera_buffer: ubo,
             command_buffer,
             command_pool,
             descriptor_set,
@@ -75,7 +75,7 @@ pub(super) fn make_descriptor_pool(device: &Device) -> Result<vk::raii::Descript
 
 fn make_ubo(allocator: &Allocator) -> Result<AllocatedBuffer<HostVisible>> {
     let info = vk::BufferCreateInfo::default()
-        .size(std::mem::size_of::<Transforms>() as u64)
+        .size(std::mem::size_of::<CameraUniform>() as u64)
         .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 

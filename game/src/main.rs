@@ -2,10 +2,11 @@ mod geometry;
 mod prelude;
 
 use engine::error::Result;
-use engine::{Engine, FrameContext, RunInfo};
+use engine::{Engine, FrameContext, Model, RunInfo};
 use prelude::*;
 use std::error::Error;
 use std::process::ExitCode;
+use std::rc::Rc;
 
 fn main() -> ExitCode {
     match run() {
@@ -25,19 +26,34 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<()> {
-    let mut engine = Engine::new("Giuseppe")?;
+    let mut engine = Engine::new("Gleed")?;
     engine.window_mut().set_position(-1400, 200);
 
-    let axis = Vec3::new(0.0, 1.0, 1.0).normalize();
+    let cube = Rc::new(engine.upload_mesh(&geometry::cube(Vec3::ZERO, 0.5))?);
+    let ball = Rc::new(engine.upload_mesh(&geometry::truncated_icosahedron(Vec3::ZERO, 0.5))?);
 
-    let scene = vec![
-        engine.upload_mesh(&geometry::cube(-0.45 * axis, 0.24))?,
-        engine.upload_mesh(&geometry::truncated_icosahedron(0.45 * axis, 0.30))?,
+    let models = vec![
+        Model::new(
+            cube,
+            Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        ),
+        Model::new(
+            ball,
+            Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        ),
     ];
 
     let run_info = RunInfo {
         update: Box::new(update),
-        scene,
+        scene: models,
     };
 
     engine.run(run_info)

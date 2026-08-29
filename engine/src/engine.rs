@@ -12,13 +12,13 @@ use std::ffi::{c_char, CString};
 use glam::Vec3;
 
 use crate::device::{Device, API_VERSION_1_4};
-use crate::internal_prelude::*;
 use crate::memory::{Allocator, TransferContext};
-use crate::mesh::{Mesh, MeshData};
+use crate::model::{Mesh, MeshData};
 use crate::platform::{Input, Window};
 use crate::renderer::{Camera, Renderer};
 use crate::swapchain::Swapchain;
 use crate::time::{Clock, Duration, TimeStep};
+use crate::{internal_prelude::*, Model};
 
 pub struct Engine {
     // FIELD ORDER IS DESTRUCTION ORDER. Everything that uses the device comes
@@ -42,7 +42,7 @@ pub struct FrameContext<'a> {
 
 pub struct RunInfo {
     pub update: Box<dyn FnMut(&mut FrameContext)>,
-    pub scene: Vec<Mesh>,
+    pub scene: Vec<Model>,
 }
 
 impl Engine {
@@ -127,7 +127,7 @@ impl Engine {
         Ok(())
     }
 
-    fn draw(&mut self, camera: &Camera, meshes: &[Mesh]) -> Result<()> {
+    fn draw(&mut self, camera: &Camera, models: &[Model]) -> Result<()> {
         // Resolves the TODO left in Swapchain::Recreate in C++: minimized, the
         // surface has a 0x0 extent and recreating the swapchain would be
         // invalid.
@@ -139,7 +139,7 @@ impl Engine {
         // it stays reachable to read the extent and to present on submit.
         let mut frame = self.renderer.begin_frame(&mut self.swapchain)?;
         frame.set_camera(camera);
-        frame.draw_scene(meshes);
+        frame.draw_scene(models);
         frame.submit(&mut self.swapchain)?;
 
         Ok(())

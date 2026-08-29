@@ -14,10 +14,10 @@
 
 mod camera;
 mod commands;
+mod data;
 mod frame;
 mod frame_slot;
 mod pipeline;
-mod uniform;
 
 use crate::device::Device;
 use crate::internal_prelude::*;
@@ -116,7 +116,7 @@ impl Renderer {
         Ok(Frame {
             guard: MustSubmit,
             command_buffer,
-            transforms_buffer: &mut slot.transforms_buffer,
+            camera_buffer: &mut slot.camera_buffer,
             descriptor_set: slot.descriptor_set,
             image_available: &slot.image_available,
             fence: &slot.fence,

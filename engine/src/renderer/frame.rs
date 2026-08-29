@@ -1,11 +1,12 @@
-use glam::{Mat4, Vec3};
+use std::mem::offset_of;
 
 use super::commands::transition_presentation;
+use super::data::CameraUniform;
 use super::pipeline::Pipeline;
-use super::uniform::Transforms;
 use crate::internal_prelude::*;
 use crate::memory::{AllocatedBuffer, HostVisible};
-use crate::mesh::Mesh;
+use crate::model::Model;
+use crate::renderer::data::PushConstants;
 use crate::renderer::Camera;
 use crate::swapchain::{Swapchain, SwapchainImage};
 
@@ -34,7 +35,7 @@ impl Drop for MustSubmit {
 pub struct Frame<'a> {
     pub(super) guard: MustSubmit,
     pub(super) command_buffer: &'a mut vk::raii::CommandBuffer,
-    pub(super) transforms_buffer: &'a mut AllocatedBuffer<HostVisible>,
+    pub(super) camera_buffer: &'a mut AllocatedBuffer<HostVisible>,
     pub(super) descriptor_set: vk::DescriptorSet,
     pub(super) image_available: &'a vk::raii::Semaphore,
     pub(super) fence: &'a vk::raii::Fence,
@@ -45,20 +46,20 @@ pub struct Frame<'a> {
 
 impl Frame<'_> {
     pub fn set_camera(&mut self, camera: &Camera) {
-        let transforms = Transforms {
-            model: Mat4::from_axis_angle(Vec3::new(0.0, 1.0, 1.0).normalize(), 0.0),
+        let transforms = CameraUniform {
             camera: camera.matrix(),
         };
 
-        self.transforms_buffer.map_copy_value(&transforms);
+        self.camera_buffer.map_copy_value(&transforms);
     }
 
-    pub fn draw_scene(&mut self, scene: &[Mesh]) {
+    pub fn draw_scene(&mut self, scene: &[Model]) {
         // The command buffer has been recording since begin_frame, and the
         // pipeline, descriptor set and mesh buffers outlive this frame.
         unsafe {
             self.command_buffer
                 .bind_pipeline(vk::PipelineBindPoint::GRAPHICS, self.pipeline.vk_pipeline());
+
             self.command_buffer.bind_descriptor_sets(
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline.layout(),
@@ -67,19 +68,26 @@ impl Frame<'_> {
                 &[],
             );
 
-            for mesh in scene {
+            for model in scene {
+                self.command_buffer.push_constants(
+                    self.pipeline.layout(),
+                    vk::ShaderStageFlags::VERTEX,
+                    offset_of!(PushConstants, model) as _,
+                    bytemuck::bytes_of(&model.matrix()),
+                );
+
                 self.command_buffer.bind_vertex_buffers(
                     0,
-                    &[mesh.vertex_buffer().vk_buffer().handle()],
+                    &[model.mesh().vertex_buffer().vk_buffer().handle()],
                     &[0],
                 );
                 self.command_buffer.bind_index_buffer(
-                    mesh.index_buffer().vk_buffer().handle(),
+                    model.mesh().index_buffer().vk_buffer().handle(),
                     0,
                     vk::IndexType::UINT32,
                 );
                 self.command_buffer
-                    .draw_indexed(mesh.index_count(), 1, 0, 0, 0);
+                    .draw_indexed(model.mesh().index_count(), 1, 0, 0, 0);
             }
         }
     }

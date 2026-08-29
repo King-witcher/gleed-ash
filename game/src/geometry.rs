@@ -3,7 +3,7 @@
 
 use engine::{
     glam::prelude::*,
-    mesh::{MeshData, Vertex},
+    model::{MeshData, Vertex},
 };
 
 /// Axis-aligned cube, one flat color per face.

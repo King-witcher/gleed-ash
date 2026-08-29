@@ -1,5 +1,8 @@
 mod vertex;
 
+use std::rc::Rc;
+
+use glam::{Mat4, Vec3};
 pub use vertex::Vertex;
 
 use crate::internal_prelude::*;
@@ -15,6 +18,11 @@ pub struct Mesh {
     index_count: u32,
     vertex_buffer: AllocatedBuffer<DeviceLocal>,
     index_buffer: AllocatedBuffer<DeviceLocal>,
+}
+
+pub struct Model {
+    mesh: Rc<Mesh>,
+    position: Vec3,
 }
 
 impl Mesh {
@@ -38,5 +46,31 @@ impl Mesh {
 
     pub fn index_buffer(&self) -> &AllocatedBuffer<DeviceLocal> {
         &self.index_buffer
+    }
+}
+
+impl Model {
+    pub fn new(mesh: Rc<Mesh>, position: Vec3) -> Self {
+        Self { mesh, position }
+    }
+
+    pub fn mesh(&self) -> &Mesh {
+        &self.mesh
+    }
+
+    pub fn position(&self) -> Vec3 {
+        self.position
+    }
+
+    pub fn set_position(&mut self, value: Vec3) {
+        self.position = value
+    }
+
+    pub fn translate(&mut self, value: Vec3) {
+        self.position += value;
+    }
+
+    pub(crate) fn matrix(&self) -> Mat4 {
+        Mat4::from_translation(self.position)
     }
 }

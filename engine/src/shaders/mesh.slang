@@ -14,21 +14,23 @@ struct VertexOutput
     float4 position : SV_Position;
 }
 
-struct Transforms
+struct PushConstants
 {
     float4x4 model;
-    float4x4 camera;
 }
 
 // [binding, descriptor set]
 [[vk::binding(0, 0)]]
-ConstantBuffer<Transforms> transforms;
+ConstantBuffer<float4x4> camera;
+
+[[vk::push_constant]]
+ConstantBuffer<PushConstants> pc;
 
 [shader("vertex")]
 VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
-    output.position = mul(transforms.camera, mul(transforms.model, float4(input.position, 1.0)));
+    output.position = mul(camera, mul(pc.model, float4(input.position, 1.0)));
     output.color = input.color;
     return output;
 }
