@@ -12,7 +12,7 @@ use std::process::{Command, Output, Stdio};
 use std::thread;
 
 const SHADER_DIR: &str = "src/shaders";
-const ENTRY_POINTS: &[&str] = &["vertMain", "fragMain"];
+const ENTRY_POINTS: &'static [&'static str] = &["vertMain", "fragMain"];
 
 fn main() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));

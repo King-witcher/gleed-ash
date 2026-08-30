@@ -6,3 +6,4 @@ SDL3.lib
 SDL3.pdb
 game/base/
 gitignore/
+.vscode/settings.json
