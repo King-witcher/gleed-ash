@@ -1,8 +1,4 @@
-//! Compiles the `.slang` files in `src/shaders/` to SPIR-V before every build.
-//!
-//! Equivalent to `slangc.sh`, but plugged into `cargo build`: the shaders
-//! compile in parallel (one `slangc` process per file) and the report only
-//! comes out after all of them finish, in the order they were found.
+//! Compiles all slang shaders in src/shaders
 
 use std::env;
 use std::fs;
@@ -11,41 +7,32 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 
-const SHADER_DIR: &str = "src/shaders";
+const SHADERS_DIR: &str = "src/shaders";
 const ENTRY_POINTS: &'static [&'static str] = &["vertMain", "fragMain"];
 
 fn main() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let shader_dir = root.join(SHADER_DIR);
+    let shader_dir = root.join(SHADERS_DIR);
 
-    // Rebuild when a shader changes (or when a new one is added to the dir).
-    // The generated `.spv` files are not on this list, so writing inside
-    // `src/` does not trigger another build in a loop.
     println!("cargo::rerun-if-changed={}", shader_dir.display());
 
-    let shaders = collect_shaders(&shader_dir).expect("failed to collect shaders");
+    let paths = list_shaders(&shader_dir).expect("failed to collect shaders");
 
-    for shader in &shaders {
+    for shader in &paths {
         println!("cargo::rerun-if-changed={}", shader.display());
     }
 
-    // Fan out: spawns every `slangc` at once. The thread exists only to drain
-    // the child's stdout/stderr pipes — without it, a verbose compiler would
-    // fill the pipe buffer and stall waiting for a reader.
-    let jobs: Vec<_> = shaders
+    let jobs: Vec<_> = paths
         .into_iter()
-        .map(|shader| thread::spawn(move || (compile(&shader), shader)))
+        .map(|path| thread::spawn(move || (compile(&path), path)))
         .collect();
 
-    // Await: `join` blocks until that job finishes and returns its result.
-    // Since the loop walks in the original order, the report is deterministic
-    // even with the processes finishing out of order.
     let total = jobs.len();
     let mut failures = 0;
 
     for job in jobs {
-        let (result, shader) = job.join().expect("thread de compilação entrou em panic");
-        let shader = shader.strip_prefix(&root).unwrap_or(&shader).display();
+        let (result, path) = job.join().expect("compilation thread panicked");
+        let shader = path.strip_prefix(&root).unwrap().display();
 
         match result {
             Ok(output) if output.status.success() => {
@@ -59,18 +46,16 @@ fn main() {
             }
             Err(e) => {
                 failures += 1;
-                warn(format!(
-                    "[FAILED] {shader}: não foi possível executar slangc: {e}"
-                ));
+                warn(format!("[FAILED] {shader}: unable to run slangc: {e}"));
             }
         }
     }
 
     if failures > 0 {
-        panic!("slangc: {failures} de {total} shader(s) falharam");
+        panic!("slangc: {failures} out of {total} shader(s) failed");
     }
 
-    warn(format!("slangc: {total} shader(s) compilado(s)"));
+    warn(format!("slangc: {total} shader(s) compiled"));
 }
 
 fn compile(shader: &Path) -> io::Result<Output> {
@@ -98,7 +83,7 @@ fn compile(shader: &Path) -> io::Result<Output> {
     cmd.spawn()?.wait_with_output()
 }
 
-fn collect_shaders(dir: &Path) -> io::Result<Vec<PathBuf>> {
+fn list_shaders(dir: &Path) -> io::Result<Vec<PathBuf>> {
     fn collect_shaders_inner(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let path = entry?.path();
@@ -119,9 +104,6 @@ fn collect_shaders(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(entries)
 }
 
-/// Cargo swallows a build script's stdout/stderr (they only show with `-vv`),
-/// so the only way to talk to the user during a successful build is
-/// `cargo::warning=`. One line per message: embedded `\n` gets truncated.
 fn warn(message: impl AsRef<str>) {
     println!("cargo::warning={}", message.as_ref());
 }
