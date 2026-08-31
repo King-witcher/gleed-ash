@@ -24,7 +24,7 @@ pub use fence::Fence;
 pub use image::Image;
 pub use instance::Instance;
 pub use objects::{
-    DescriptorSetLayout, ImageView, Pipeline, PipelineLayout, Semaphore, ShaderModule,
+    DescriptorSetLayout, ImageView, Pipeline, PipelineLayout, Sampler, Semaphore, ShaderModule,
 };
 pub use physical_device::PhysicalDevice;
 pub use queue::Queue;

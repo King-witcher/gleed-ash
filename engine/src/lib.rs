@@ -3,7 +3,7 @@ mod engine;
 pub mod error;
 mod internal_prelude;
 mod memory;
-pub mod mesh;
+pub mod model;
 mod platform;
 mod renderer;
 mod swapchain;
@@ -13,6 +13,7 @@ pub mod time;
 pub use engine::{Engine, FrameContext, RunInfo};
 pub use error::{Context, Error, IntoError, Result};
 pub use glam;
+pub use model::{Model, Vertex};
 pub use platform::input;
 
 pub mod prelude {

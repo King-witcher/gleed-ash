@@ -35,6 +35,13 @@ device_object!(
     create_pipeline_layout(vk::PipelineLayoutCreateInfo<'_>)
 );
 
+device_object!(
+    Sampler,
+    vk::Sampler,
+    destroy_sampler,
+    create_sampler(vk::SamplerCreateInfo<'_>)
+);
+
 // No single-object create call: pipelines come out of a batch, so
 // `Device::create_graphics_pipeline` builds these by hand.
 device_object!(Pipeline, vk::Pipeline, destroy_pipeline);

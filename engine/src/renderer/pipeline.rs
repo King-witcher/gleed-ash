@@ -1,18 +1,18 @@
 //! Equivalent to modules/engine/src/pipeline.{h,cc}.
 
 use std::io::Cursor;
+use std::mem::offset_of;
+
+use glam::Mat4;
 
 use crate::device::Device;
 use crate::internal_prelude::*;
-use crate::mesh::Vertex;
+use crate::model::Vertex;
+use crate::renderer::data::PushConstants;
 
-const SHADER_SPV: &[u8] = include_bytes!("../shaders/mesh.spv");
+const MESH_SHADER: &[u8] = include_bytes!("../shaders/mesh.spv");
 
 pub(super) struct Pipeline {
-    // FIELD ORDER IS DESTRUCTION ORDER: the pipeline dies before the layouts
-    // that describe it. Each of them holds the device by refcount, so there is
-    // no `impl Drop` here anymore — nor the leak that existed when pipeline
-    // creation failed after the layouts.
     pipeline: vk::raii::Pipeline,
     layout: vk::raii::PipelineLayout,
     descriptor_set_layout: vk::raii::DescriptorSetLayout,
@@ -46,25 +46,18 @@ impl Pipeline {
 }
 
 fn shader_code() -> Vec<u32> {
-    // read_spv validates the magic number and settles the u32 alignment —
-    // what in C++ was a reinterpret_cast<const u32*> hoping for the best. It
-    // is still needed even with the bytes embedded: `include_bytes!` gives a
-    // 1-aligned `&[u8]`, and vkCreateShaderModule wants `[u32]`. The copy
-    // happens once, at pipeline creation.
-    //
-    // `expect`, not `?`: these bytes are compile-time constants. If they are
-    // not valid SPIR-V, the build produced a broken .spv — our bug, not an
-    // environment condition the caller could handle.
-    vk::util::read_spv(&mut Cursor::new(SHADER_SPV)).expect("o SPIR-V embutido é inválido")
+    vk::util::read_spv(&mut Cursor::new(MESH_SHADER)).expect("o SPIR-V embutido é inválido")
 }
 
 fn make_descriptor_set_layout(device: &Device) -> Result<vk::raii::DescriptorSetLayout> {
-    let bindings = [vk::DescriptorSetLayoutBinding::default()
-        .binding(0)
-        // we can have an array of uniform buffers
-        .descriptor_count(1)
-        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-        .stage_flags(vk::ShaderStageFlags::VERTEX)];
+    let bindings = [
+        // Transforms buffer
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_count(1) // more than 1 is accessed as an array
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .stage_flags(vk::ShaderStageFlags::VERTEX),
+    ];
 
     let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
@@ -76,13 +69,24 @@ fn make_pipeline_layout(
     device: &Device,
     descriptor_set_layout: &vk::raii::DescriptorSetLayout,
 ) -> Result<vk::raii::PipelineLayout> {
-    // Attaches the UBO's descriptor set layout so the shaders can read
-    // `set = 0, binding = 0`.
-    let set_layouts = [descriptor_set_layout.handle()];
-    let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
+    let descriptor_sets = [descriptor_set_layout.handle()];
+    let push_constants = [
+        // Model matrix
+        vk::PushConstantRange {
+            stage_flags: vk::ShaderStageFlags::VERTEX,
+            offset: offset_of!(PushConstants, model) as _,
+            size: std::mem::size_of::<Mat4>() as _,
+        },
+    ];
 
-    unsafe { device.vk_device().create_pipeline_layout(&info) }
-        .context("create the pipeline layout")
+    unsafe {
+        device.vk_device().create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo::default()
+                .set_layouts(&descriptor_sets)
+                .push_constant_ranges(&push_constants),
+        )
+    }
+    .context("create the pipeline layout")
 }
 
 fn make_pipeline(
